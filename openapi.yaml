@@ -1,0 +1,102 @@
+openapi: 3.0.3
+info:
+  title: IQA Backend API
+  version: 0.0.1
+  description: 图像质量评估 API。
+servers:
+  - url: http://localhost:8080
+paths:
+  /assess:
+    post:
+      summary: 单张图片评估
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - file
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponsePredictResult"
+  /assess/batch:
+    post:
+      summary: 多张图片评估
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - files
+              properties:
+                files:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseBatchPredictResponse"
+components:
+  schemas:
+    ResponsePredictResult:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/PredictResult"
+      required:
+        - code
+        - message
+    ResponseBatchPredictResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/BatchPredictResponse"
+      required:
+        - code
+        - message
+    PredictResult:
+      type: object
+      properties:
+        fileName:
+          type: string
+        qualityScore:
+          type: number
+          format: float
+        scene:
+          type: string
+        distortion:
+          type: string
+    BatchPredictResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: "#/components/schemas/PredictResult"
+

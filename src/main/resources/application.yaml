@@ -6,6 +6,21 @@ spring:
     username: root
     password: 123456
     driver-class-name: com.mysql.cj.jdbc.Driver
-
+server:
+  port: 8080
+  servlet:
+    # 设置响应编码格式强制为UTF-8, 否则过滤器/拦截器中通过打印流直接响应中文时前端会收到乱码
+    encoding:
+      charset: UTF-8
+      force: true
 model-api:
   base-url: http://localhost:8000
+
+# JWT
+jwt:
+  secret-key:
+    # jjwt的秘钥不允许太短
+    access-token: 3q4-jb!@-$%@(%vgUYT&:s-dbehj@AWDnwadamf
+  expiration:
+    # 单位为秒
+    access-token: 432000 # 5天

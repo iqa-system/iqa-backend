@@ -3,7 +3,6 @@ package org.wlow.iqabackend.config;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.http.client.BufferingClientHttpRequestFactory;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
@@ -21,7 +20,7 @@ public class ModelApiConfig {
     public RestClient modelApiRestClient(ModelApiProperties properties) {
         return RestClient.builder()
                 .baseUrl(properties.getBaseUrl())
-                .requestFactory(new BufferingClientHttpRequestFactory(new SimpleClientHttpRequestFactory()))
+                .requestFactory(new SimpleClientHttpRequestFactory())
                 .build();
     }
 }
