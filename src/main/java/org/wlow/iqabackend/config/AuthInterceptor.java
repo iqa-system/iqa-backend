@@ -42,7 +42,7 @@ public class AuthInterceptor implements HandlerInterceptor {
         try {
             Claims payload = jwtService.parseAndValidateAccessToken(token);
             String username = payload.get("username", String.class);
-            int userId = payload.get("id", Integer.class);
+            Integer userId = payload.get("userId", Integer.class);
             CurrentUser.setAll(userId, username);
             return true;
         } catch (Exception ex) {
