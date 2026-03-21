@@ -13,10 +13,18 @@ import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.multipart.MultipartFile;
+import org.wlow.iqabackend.data.CurrentUser;
 import org.wlow.iqabackend.data.dto.BatchPredictResponse;
 import org.wlow.iqabackend.data.dto.PredictResult;
+import org.wlow.iqabackend.data.entity.AssessRecord;
+import org.wlow.iqabackend.mapper.AssessRecordMapper;
+
+import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -29,6 +37,8 @@ import java.util.Optional;
 @Slf4j
 public class AssessService {
     private final RestClient modelApiRestClient;
+    private final AssessRecordMapper assessRecordMapper;
+    private final ImageCompressService imageCompressService;
 
     /**
      * 调用/predict处理单个上传文件.
@@ -37,7 +47,11 @@ public class AssessService {
         validateFile(file);
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("file", toFilePart(file));
-        return executePredict(body);
+        PredictResult result = executePredict(body);
+
+        // 单图评估成功后, 立即落一条历史记录, 保证查询接口可追溯用户操作.
+        saveAssessRecord(file);
+        return result;
     }
 
     /**
@@ -57,7 +71,28 @@ public class AssessService {
             validateFile(file);
             body.add("files", toFilePart(file));
         }
-        return executeBatchPredict(body);
+        BatchPredictResponse response = executeBatchPredict(body);
+
+        // 批量评估成功后, 为每张图分别写入历史记录, 便于分页回看.
+        saveAssessRecords(files);
+        return response;
+    }
+
+    /**
+     * 查询当前登录用户的评估历史记录.
+     */
+    public Page<AssessRecord> history(int page, int pageSize) {
+        Integer userId = CurrentUser.getId();
+        if (userId == null) {
+            throw new IllegalArgumentException("当前用户未登录");
+        }
+
+        Page<AssessRecord> pageRequest = new Page<>(page, pageSize);
+        QueryWrapper<AssessRecord> wrapper = new QueryWrapper<AssessRecord>()
+                .eq("user_id", userId)
+                .orderByDesc("assess_time");
+
+        return assessRecordMapper.selectPage(pageRequest, wrapper);
     }
 
     /**
@@ -67,6 +102,49 @@ public class AssessService {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("file为空");
         }
+    }
+
+    /**
+     * 保存单条评估历史记录.
+     */
+    private void saveAssessRecord(MultipartFile file) {
+        Integer userId = CurrentUser.getId();
+        if (userId == null) {
+            throw new IllegalArgumentException("当前用户未登录");
+        }
+        AssessRecord record = buildRecord(file, userId);
+        assessRecordMapper.insert(record);
+    }
+
+    /**
+     * 批量保存评估历史记录.
+     */
+    private void saveAssessRecords(List<MultipartFile> files) {
+        Integer userId = CurrentUser.getId();
+        if (userId == null) {
+            throw new IllegalArgumentException("当前用户未登录");
+        }
+
+        List<AssessRecord> records = new ArrayList<>(files.size());
+        for (MultipartFile file : files) {
+            records.add(buildRecord(file, userId));
+        }
+        for (AssessRecord record : records) {
+            assessRecordMapper.insert(record);
+        }
+    }
+
+    /**
+     * 构建待入库历史记录.
+     * 图片会先压缩到15KB目标以内, 再转为Base64字符串.
+     */
+    private AssessRecord buildRecord(MultipartFile file, Integer userId) {
+        AssessRecord record = new AssessRecord();
+        record.setUserId(userId);
+        record.setFilename(safeName(file));
+        record.setBase64(imageCompressService.compressToBase64(file));
+        record.setAssessTime(LocalDateTime.now());
+        return record;
     }
 
     /**

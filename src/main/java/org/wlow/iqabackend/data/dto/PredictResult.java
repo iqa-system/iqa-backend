@@ -28,12 +28,12 @@ public class PredictResult {
     private float qualityScore;
 
     /**
-     * 模型预测的场景分类.
+     * 模型预测的场景分类编码.
      */
-    private String scene;
+    private Integer scene;
 
     /**
-     * 模型预测的失真分类.
+     * 模型预测的失真分类编码.
      */
-    private String distortion;
+    private Integer distortion;
 }

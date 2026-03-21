@@ -6,3 +6,13 @@ CREATE TABLE IF NOT EXISTS `user` (
   `register_time` DATETIME default CURRENT_TIMESTAMP NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 图片评估历史记录表
+CREATE TABLE IF NOT EXISTS `assess_record` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `filename` VARCHAR(255) NOT NULL,
+  `base64` LONGTEXT NOT NULL,
+  `assess_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_assess_record_user_time` (`user_id`, `assess_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
