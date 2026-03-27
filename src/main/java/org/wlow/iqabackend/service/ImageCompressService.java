@@ -35,6 +35,17 @@ public class ImageCompressService {
     public String compressToBase64(MultipartFile file) {
         try {
             byte[] imageBytes = file.getBytes();
+            return compressToBase64(imageBytes);
+        } catch (IOException ex) {
+            throw new IllegalArgumentException("读取图片失败");
+        }
+    }
+
+    /**
+     * 将图片字节压缩到15KB以内并编码为Base64字符串.
+     */
+    public String compressToBase64(byte[] imageBytes) {
+        try {
             byte[] compressedBytes = compressToLimit(imageBytes);
             return Base64.getEncoder().encodeToString(compressedBytes);
         } catch (IOException ex) {

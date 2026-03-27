@@ -101,7 +101,10 @@ paths:
                 $ref: "#/components/schemas/ResponsePredictResult"
   /assess/batch:
     post:
-      summary: 多张图片评估
+      summary: 多张图片评估(SSE进度流)
+      description: |
+        返回text/event-stream流式事件.
+        事件名称包括start, progress, result, completed, error.
       parameters:
         - $ref: "#/components/parameters/AuthorizationHeader"
       requestBody:
@@ -120,11 +123,11 @@ paths:
                     format: binary
       responses:
         "200":
-          description: 请求成功
+          description: 请求成功, 持续返回SSE事件直到任务结束
           content:
-            application/json:
+            text/event-stream:
               schema:
-                $ref: "#/components/schemas/ResponseBatchPredictResponse"
+                $ref: "#/components/schemas/AssessBatchSseStream"
   /assess/history:
     get:
       summary: 查询当前用户图片评估历史
@@ -220,6 +223,26 @@ components:
       required:
         - code
         - message
+    AssessBatchSseStream:
+      type: string
+      description: |
+        SSE消息体. 事件通过event字段区分, data为JSON对象.
+        start/progress: message, progress, total, completed.
+        result: message, progress, total, completed, currentFileName, predictResult.
+        completed: message, progress, total, completed, results.
+        error: message.
+      example: |
+        event: start
+        data: {"message":"批量评估任务开始","progress":0,"total":3}
+
+        event: progress
+        data: {"message":"模型批量评估中","progress":20,"total":3}
+
+        event: result
+        data: {"message":"已完成单张评估","currentFileName":"a.jpg","progress":33,"total":3,"completed":1,"predictResult":{"fileName":"a.jpg","qualityScore":0.92,"scene":1,"distortion":2}}
+
+        event: completed
+        data: {"message":"批量评估完成","progress":100,"total":3,"completed":3,"results":[]}
     ResponsePageAssessRecord:
       type: object
       properties:
@@ -273,6 +296,16 @@ components:
         assessTime:
           type: string
           format: date-time
+        qualityScore:
+          type: number
+          format: double
+          description: 图像评估的质量分数.
+        scene:
+          type: string
+          description: 场景分类编码.
+        distortion:
+          type: string
+          description: 失真类型编码.
     PageAssessRecord:
       type: object
       description: MyBatis-Plus分页结果.

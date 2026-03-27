@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -14,7 +15,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
-import org.wlow.iqabackend.data.dto.BatchPredictResponse;
 import org.wlow.iqabackend.data.dto.PredictResult;
 import org.wlow.iqabackend.data.dto.Response;
 import org.wlow.iqabackend.data.entity.AssessRecord;
@@ -39,13 +39,13 @@ public class AssessController {
     }
 
     /**
-     * 多图像质量评估接口.
+     * 多图像质量评估SSE接口.
+     * 返回text/event-stream, 按事件推送实时进度与逐图结果.
      */
-    @PostMapping(value = "/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public Response<BatchPredictResponse> assessBatch(
+    @PostMapping(value = "/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter assessBatch(
             @RequestPart("files") @NotEmpty List<MultipartFile> files) {
-        BatchPredictResponse result = assessService.assessBatch(files);
-        return Response.success(result);
+        return assessService.assessBatchStream(files);
     }
 
     /**

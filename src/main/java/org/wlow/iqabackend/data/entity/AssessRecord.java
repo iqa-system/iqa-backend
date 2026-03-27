@@ -45,5 +45,20 @@ public class AssessRecord {
      */
     @TableField("assess_time")
     private LocalDateTime assessTime;
+
+    /**
+     * 图像评估的质量分数.
+     */
+    private Double qualityScore;
+
+    /**
+     * 场景分类编码.
+     */
+    private String scene;
+
+    /**
+     * 失真类型编码.
+     */
+    private String distortion;
 }
 
