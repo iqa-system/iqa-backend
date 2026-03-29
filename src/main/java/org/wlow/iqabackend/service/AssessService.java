@@ -185,8 +185,8 @@ public class AssessService {
         
         if (result != null) {
             record.setQualityScore((double) result.getQualityScore());
-            record.setScene(result.getScene() != null ? String.valueOf(result.getScene()) : null);
-            record.setDistortion(result.getDistortion() != null ? String.valueOf(result.getDistortion()) : null);
+            record.setScene(result.getScene());
+            record.setDistortions(result.getDistortions());
         }
         
         return record;
@@ -204,8 +204,8 @@ public class AssessService {
         
         if (result != null) {
             record.setQualityScore((double) result.getQualityScore());
-            record.setScene(result.getScene() != null ? String.valueOf(result.getScene()) : null);
-            record.setDistortion(result.getDistortion() != null ? String.valueOf(result.getDistortion()) : null);
+            record.setScene(result.getScene());
+            record.setDistortions(result.getDistortions());
         }
         
         return record;

@@ -288,7 +288,7 @@ components:
         data: {"message":"模型批量评估中","progress":20,"total":3}
 
         event: result
-        data: {"message":"已完成单张评估","currentFileName":"a.jpg","progress":33,"total":3,"completed":1,"predictResult":{"file_name":"a.jpg","quality_score":0.92,"scene":1,"distortion":2}}
+        data: {"message":"已完成单张评估","currentFileName":"a.jpg","progress":33,"total":3,"completed":1,"predictResult":{"file_name":"a.jpg","quality_score":0.92,"scene":1,"distortions":[{"index":3,"prob":0.4213}]}}
 
         event: completed
         data: {"message":"批量评估完成","progress":100,"total":3,"completed":3,"results":[]}
@@ -333,6 +333,10 @@ components:
         - message
     PredictResult:
       type: object
+      required:
+        - quality_score
+        - scene
+        - distortions
       properties:
         file_name:
           type: string
@@ -343,10 +347,24 @@ components:
           type: integer
           format: int32
           description: 场景分类编码.
-        distortion:
+        distortions:
+          type: array
+          description: 失真类型概率列表. Python服务保证至少返回一项.
+          items:
+            $ref: "#/components/schemas/DistortionProb"
+    DistortionProb:
+      type: object
+      required:
+        - index
+        - prob
+      properties:
+        index:
           type: integer
           format: int32
-          description: 失真分类编码.
+          description: 失真类型编码.
+        prob:
+          type: number
+          description: 失真概率, 保留4位小数.
     BatchPredictResponse:
       type: object
       properties:
@@ -376,11 +394,14 @@ components:
           format: double
           description: 图像评估的质量分数.
         scene:
-          type: string
+          type: integer
+          format: int32
           description: 场景分类编码.
-        distortion:
-          type: string
-          description: 失真类型编码.
+        distortions:
+          type: array
+          description: 失真类型概率列表. 后端从JSON列反序列化后返回对象数组.
+          items:
+            $ref: "#/components/schemas/DistortionProb"
     PageAssessRecord:
       type: object
       description: MyBatis-Plus分页结果.

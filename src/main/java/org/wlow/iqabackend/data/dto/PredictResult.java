@@ -6,6 +6,8 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.List;
+
 /**
  * Python服务返回的模型预测结果.
  * 将snake_case JSON字段映射为camelCase Java字段.
@@ -33,7 +35,8 @@ public class PredictResult {
     private Integer scene;
 
     /**
-     * 模型预测的失真分类编码.
+     * 模型返回的失真类型概率列表.
+     * 每一项包含失真编码index和对应概率prob.
      */
-    private Integer distortion;
+    private List<DistortionProb> distortions;
 }

@@ -7,14 +7,15 @@ CREATE TABLE IF NOT EXISTS `user` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 图片评估历史记录表
-CREATE TABLE IF NOT EXISTS `assess_record` (
+DROP TABLE IF EXISTS `assess_record`;
+CREATE TABLE `assess_record` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `user_id` INT NOT NULL,
   `filename` VARCHAR(255) NOT NULL,
   `base64` LONGTEXT NOT NULL,
   `quality_score` DOUBLE,
-  `scene` VARCHAR(100),
-  `distortion` VARCHAR(100),
+  `scene` INT,
+  `distortions` JSON NOT NULL,
   `assess_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_assess_record_user_time` (`user_id`, `assess_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

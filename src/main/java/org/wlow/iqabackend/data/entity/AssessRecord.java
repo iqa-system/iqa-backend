@@ -4,11 +4,14 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.baomidou.mybatisplus.extension.handlers.JacksonTypeHandler;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.wlow.iqabackend.data.dto.DistortionProb;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 图片评估历史记录实体.
@@ -17,7 +20,7 @@ import java.time.LocalDateTime;
 @Data
 @AllArgsConstructor
 @NoArgsConstructor
-@TableName("assess_record")
+@TableName(value = "assess_record", autoResultMap = true)
 public class AssessRecord {
     /**
      * 历史记录主键.
@@ -54,11 +57,13 @@ public class AssessRecord {
     /**
      * 场景分类编码.
      */
-    private String scene;
+    private Integer scene;
 
     /**
-     * 失真类型编码.
+     * 失真类型概率列表.
+     * 使用JSON列存储, 查询时自动反序列化为对象列表.
      */
-    private String distortion;
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private List<DistortionProb> distortions;
 }
 
