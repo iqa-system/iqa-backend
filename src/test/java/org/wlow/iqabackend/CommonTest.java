@@ -15,6 +15,6 @@ public class CommonTest {
                 .uri("/health")
                 .retrieve()
                 .body(String.class);
-        System.out.println("Health check response: " + response);
+        System.out.println("检测python模型服务: " + response);
     }
 }

@@ -1,5 +1,6 @@
 package org.wlow.iqabackend.exception;
 
+import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.MyBatisSystemException;
 import org.springframework.http.HttpStatus;
@@ -80,6 +81,16 @@ public class GlobalHandler {
         String parameterType = e.getParameter().getParameterType().getName();
         log.warn("参数类型不匹配: 参数 {} 应当为 {} 类型", parameterName, parameterType);
         return Response.failure(400, "参数类型不匹配: 参数 " + parameterName + " 应当为 " + parameterType + " 类型");
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    public Response<String> handleConstraintViolationException(ConstraintViolationException e){
+        String message = e.getConstraintViolations().stream()
+                .map(violation -> violation.getPropertyPath() + " " + violation.getMessage())
+                .reduce((s1, s2) -> s1 + "; " + s2)
+                .orElse(e.getMessage());
+        log.warn("参数不符合规范: {}", message);
+        return Response.failure(400, "参数不符合规范: " + message);
     }
 
     /**
