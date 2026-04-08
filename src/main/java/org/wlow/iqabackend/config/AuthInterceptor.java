@@ -12,6 +12,7 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.HandlerInterceptor;
 import org.wlow.iqabackend.data.CurrentUser;
+import org.wlow.iqabackend.data.UserRole;
 import org.wlow.iqabackend.data.dto.Response;
 import org.wlow.iqabackend.service.JwtService;
 
@@ -43,7 +44,8 @@ public class AuthInterceptor implements HandlerInterceptor {
             Claims payload = jwtService.parseAndValidateAccessToken(token);
             String username = payload.get("username", String.class);
             Integer userId = payload.get("userId", Integer.class);
-            CurrentUser.setAll(userId, username);
+            String role = UserRole.normalize(payload.get("role", String.class));
+            CurrentUser.setAll(userId, username, role);
             return true;
         } catch (Exception ex) {
             log.warn("Token校验失败: {}", ex.getMessage());

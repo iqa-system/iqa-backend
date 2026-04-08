@@ -3,11 +3,12 @@ CREATE TABLE IF NOT EXISTS `user` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `username` VARCHAR(50) NOT NULL UNIQUE,
   `password` VARCHAR(255) NOT NULL,
+  `email` VARCHAR(255) NULL UNIQUE,
+  `role` VARCHAR(20) NOT NULL DEFAULT 'USER',
   `register_time` DATETIME default CURRENT_TIMESTAMP NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 文件元数据表
-DROP TABLE IF EXISTS `file_entry`;
 CREATE TABLE `file_entry` (
 `id` INT PRIMARY KEY AUTO_INCREMENT,
 `user_id` INT NOT NULL,
@@ -21,7 +22,6 @@ INDEX `idx_file_entry_user_time` (`user_id`, `upload_time`)
 
 -- 图片评估历史记录表
 -- 旧历史记录在本次升级中直接清空, 不做Base64迁移
-DROP TABLE IF EXISTS `assess_record`;
 CREATE TABLE `assess_record` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `user_id` INT NOT NULL,

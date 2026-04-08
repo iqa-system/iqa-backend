@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.wlow.iqabackend.data.CurrentUser;
+import org.wlow.iqabackend.data.UserRole;
 import org.wlow.iqabackend.data.dto.UserInfo;
 import org.wlow.iqabackend.data.entity.User;
 import org.wlow.iqabackend.mapper.UserMapper;
@@ -32,14 +33,20 @@ public class UserService {
             throw new IllegalArgumentException("用户不存在");
         }
 
-        return new UserInfo(user.getId(), user.getUsername(), user.getRegisterTime());
+        return new UserInfo(
+                user.getId(),
+                user.getUsername(),
+                user.getEmail(),
+                UserRole.normalize(user.getRole()),
+                user.getRegisterTime()
+        );
     }
 
     /**
      * 更新用户信息.
-     * 支持修改用户名和密码, 修改密码时必须提供旧密码验证.
+     * 支持修改用户名、邮箱和密码, 修改密码时必须提供旧密码验证.
      */
-    public void updateUserInfo(String username, String oldPassword, String newPassword) {
+    public void updateUserInfo(String username, String email, String oldPassword, String newPassword) {
         Integer userId = CurrentUser.getId();
         if (userId == null) {
             throw new IllegalArgumentException("当前用户未登录");
@@ -54,14 +61,28 @@ public class UserService {
 
         // 修改用户名
         if (username != null && !username.isBlank()) {
-            if (username.equals(user.getUsername())) {
+            String normalizedUsername = username.trim();
+            if (normalizedUsername.equals(user.getUsername())) {
                 throw new IllegalArgumentException("新用户名与当前用户名相同");
             }
             // 检查用户名是否已被占用
-            if (existsUsername(username)) {
+            if (existsUsername(normalizedUsername)) {
                 throw new IllegalArgumentException("用户名已存在");
             }
-            user.setUsername(username);
+            user.setUsername(normalizedUsername);
+            hasUpdate = true;
+        }
+
+        // 修改邮箱
+        if (email != null && !email.isBlank()) {
+            String normalizedEmail = email.trim();
+            if (normalizedEmail.equals(user.getEmail())) {
+                throw new IllegalArgumentException("新邮箱与当前邮箱相同");
+            }
+            if (existsEmail(normalizedEmail)) {
+                throw new IllegalArgumentException("邮箱已存在");
+            }
+            user.setEmail(normalizedEmail);
             hasUpdate = true;
         }
 
@@ -84,6 +105,7 @@ public class UserService {
         }
 
         // 更新用户信息
+        user.setRole(UserRole.normalize(user.getRole()));
         userMapper.updateById(user);
     }
 
@@ -92,5 +114,12 @@ public class UserService {
      */
     private boolean existsUsername(String username) {
         return userMapper.selectOne(new QueryWrapper<User>().eq("username", username)) != null;
+    }
+
+    /**
+     * 判断邮箱是否已存在.
+     */
+    private boolean existsEmail(String email) {
+        return userMapper.selectOne(new QueryWrapper<User>().eq("email", email)) != null;
     }
 }

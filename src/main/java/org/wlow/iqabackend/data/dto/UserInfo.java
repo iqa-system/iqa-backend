@@ -24,6 +24,16 @@ public class UserInfo {
     private String username;
 
     /**
+     * 用户邮箱.
+     */
+    private String email;
+
+    /**
+     * 用户角色.
+     */
+    private String role;
+
+    /**
      * 注册时间.
      */
     private LocalDateTime registerTime;

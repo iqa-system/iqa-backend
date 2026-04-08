@@ -1,5 +1,6 @@
 package org.wlow.iqabackend.controller;
 
+import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.Size;
 import lombok.RequiredArgsConstructor;
 import org.springframework.validation.annotation.Validated;
@@ -33,14 +34,16 @@ public class UserController {
 
     /**
      * 更新用户信息接口.
-     * 支持修改用户名和密码, 修改密码时需要提供旧密码.
+     * 支持修改用户名、邮箱和密码, 修改密码时需要提供旧密码.
      */
     @PostMapping("/update-info")
     public Response<String> updateInfo(
             @RequestParam(required = false) @Size(min = 3, max = 50, message = "用户名长度必须在3-50之间") String username,
+            @RequestParam(required = false) @Email(message = "邮箱格式不正确")
+            @Size(max = 255, message = "邮箱长度不能超过255") String email,
             @RequestParam(required = false) @Size(min = 6, message = "旧密码长度至少为6") String oldPassword,
             @RequestParam(required = false) @Size(min = 6, message = "新密码长度至少为6") String newPassword) {
-        userService.updateUserInfo(username, oldPassword, newPassword);
+        userService.updateUserInfo(username, email, oldPassword, newPassword);
         return Response.success("用户信息更新成功");
     }
 }

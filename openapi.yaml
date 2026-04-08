@@ -17,10 +17,14 @@ paths:
               type: object
               required:
                 - username
+                - email
                 - password
               properties:
                 username:
                   type: string
+                email:
+                  type: string
+                  format: email
                 password:
                   type: string
       responses:
@@ -29,7 +33,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ResponseAuthTokenResponse"
+                $ref: "#/components/schemas/ResponseString"
   /auth/login:
     post:
       summary: 用户登录
@@ -271,7 +275,7 @@ paths:
     post:
       summary: 更新用户信息
       description: |
-        支持修改用户名和密码.
+        支持修改用户名、邮箱和密码.
         修改密码时必须提供旧密码进行验证.
         至少需要提供一个需要更新的字段.
       parameters:
@@ -288,6 +292,11 @@ paths:
                   description: 新用户名 (可选, 长度3-50).
                   minLength: 3
                   maxLength: 50
+                email:
+                  type: string
+                  format: email
+                  description: 新邮箱 (可选, 唯一).
+                  maxLength: 255
                 oldPassword:
                   type: string
                   description: 旧密码 (修改密码时必须提供, 长度至少6).
@@ -545,6 +554,17 @@ components:
         username:
           type: string
           description: 用户名.
+        email:
+          type: string
+          format: email
+          nullable: true
+          description: 用户邮箱. 旧用户可能暂时为空.
+        role:
+          type: string
+          description: 用户角色.
+          enum:
+            - USER
+            - ADMIN
         registerTime:
           type: string
           format: date-time

@@ -26,12 +26,13 @@ public class JwtService {
     /**
      * 生成AccessToken.
      */
-    public String generateAccessToken(String username, Integer userId) {
+    public String generateAccessToken(String username, Integer userId, String role) {
         Instant now = Instant.now();
         Instant expiresAt = now.plusSeconds(accessTokenExpiration);
         return Jwts.builder()
                 .claim("username", username)
                 .claim("userId", userId)
+                .claim("role", role)
                 .issuedAt(Date.from(now))
                 .expiration(Date.from(expiresAt))
                 .signWith(accessTokenKey())

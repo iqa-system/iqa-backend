@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.wlow.iqabackend.data.UserRole;
 import org.wlow.iqabackend.data.dto.AuthTokenResponse;
 import org.wlow.iqabackend.data.dto.Response;
 import org.wlow.iqabackend.data.entity.User;
@@ -28,29 +29,38 @@ public class AuthService {
     private final BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
 
     /**
-     * 注册新用户, 成功后返回新的AccessToken.
+     * 注册新用户.
+     * 当前版本注册成功后仅返回成功消息, 不直接发放Token.
      */
-    public Response<String> signUp(String username, String rawPassword) {
-        if (existsUsername(username)) {
+    public Response<String> signUp(String username, String rawPassword, String email) {
+        String normalizedUsername = normalizeRequiredValue(username, "用户名不能为空");
+        String normalizedEmail = normalizeRequiredValue(email, "邮箱不能为空");
+
+        if (existsUsername(normalizedUsername)) {
             throw new IllegalArgumentException("用户名已存在");
         }
+        if (existsEmail(normalizedEmail)) {
+            throw new IllegalArgumentException("邮箱已存在");
+        }
         User user = new User();
-        user.setUsername(username);
+        user.setUsername(normalizedUsername);
         user.setPassword(passwordEncoder.encode(rawPassword));
+        user.setEmail(normalizedEmail);
+        user.setRole(UserRole.USER.name());
         user.setRegisterTime(LocalDateTime.now());
         userMapper.insert(user);
-        return Response.success(username + "注册成功");
+        return Response.success(normalizedUsername + "注册成功");
     }
 
     /**
      * 登录校验账号密码, 成功后返回AccessToken.
      */
     public AuthTokenResponse login(String username, String rawPassword) {
-        User user = findByUsername(username);
+        User user = findByUsername(normalizeRequiredValue(username, "用户名不能为空"));
         if (user == null || !passwordEncoder.matches(rawPassword, user.getPassword())) {
             throw new IllegalArgumentException("用户名或密码错误");
         }
-        return buildTokenResponse(username, user.getId());
+        return buildTokenResponse(user);
     }
 
     /**
@@ -58,9 +68,12 @@ public class AuthService {
      */
     public AuthTokenResponse refresh(String accessToken) {
         Claims claims = jwtService.parseAndValidateAccessToken(accessToken);
-        String username = claims.get("username", String.class);
         Integer userId = claims.get("userId", Integer.class);
-        return buildTokenResponse(username, userId);
+        User user = userMapper.selectById(userId);
+        if (user == null) {
+            throw new IllegalArgumentException("用户不存在");
+        }
+        return buildTokenResponse(user);
     }
 
     /**
@@ -68,6 +81,13 @@ public class AuthService {
      */
     private boolean existsUsername(String username) {
         return userMapper.selectOne(new QueryWrapper<User>().eq("username", username)) != null;
+    }
+
+    /**
+     * 判断邮箱是否已存在.
+     */
+    private boolean existsEmail(String email) {
+        return userMapper.selectOne(new QueryWrapper<User>().eq("email", email)) != null;
     }
 
     /**
@@ -80,9 +100,23 @@ public class AuthService {
     /**
      * 统一构建Token返回体.
      */
-    private AuthTokenResponse buildTokenResponse(String username, Integer userId) {
-        String token = jwtService.generateAccessToken(username, userId);
+    private AuthTokenResponse buildTokenResponse(User user) {
+        String token = jwtService.generateAccessToken(
+                user.getUsername(),
+                user.getId(),
+                UserRole.normalize(user.getRole())
+        );
         return new AuthTokenResponse(token, "Access", accessTokenExpiration);
+    }
+
+    /**
+     * 对用户名/邮箱这类必填字符串做trim处理.
+     */
+    private String normalizeRequiredValue(String value, String emptyMessage) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(emptyMessage);
+        }
+        return value.trim();
     }
 }
 
