@@ -102,6 +102,20 @@ public class GlobalHandler {
         return Response.failure(502, "远程服务调用失败: " + e.getMessage());
     }
 
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    @ExceptionHandler(FileAccessDeniedException.class)
+    public Response<String> handleFileAccessDeniedException(FileAccessDeniedException e) {
+        log.warn("文件访问被拒绝: {}", e.getMessage());
+        return Response.failure(403, e.getMessage());
+    }
+
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    @ExceptionHandler(FileResourceNotFoundException.class)
+    public Response<String> handleFileResourceNotFoundException(FileResourceNotFoundException e) {
+        log.warn("文件资源不存在: {}", e.getMessage());
+        return Response.failure(404, e.getMessage());
+    }
+
     @ExceptionHandler(Exception.class)
     public Response<String> handleException(Exception e){
         log.error("服务端异常: {} >> {}", e.getClass(), e.getMessage());

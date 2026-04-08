@@ -39,9 +39,19 @@ public class AssessRecord {
     private String filename;
 
     /**
-     * 压缩后图片的Base64字符串.
+     * 对应文件元数据主键.
+     * assess_record只和file_entry建立逻辑关联, 不再直接保存图片内容.
      */
-    private String base64;
+    @TableField("file_entry_id")
+    private Integer fileEntryId;
+
+    /**
+     * 图片资源访问地址.
+     * 查询时动态拼接, 不存储到数据库.
+     * 前端看到的是这个字段, 而不是磁盘绝对路径.
+     */
+    @TableField(exist = false)
+    private String imageURL;
 
     /**
      * 评估发生时间.
@@ -66,4 +76,3 @@ public class AssessRecord {
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<DistortionProb> distortions;
 }
-

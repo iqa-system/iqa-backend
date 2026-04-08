@@ -18,6 +18,7 @@ import org.wlow.iqabackend.data.CurrentUser;
 import org.wlow.iqabackend.data.dto.BatchPredictResponse;
 import org.wlow.iqabackend.data.dto.PredictResult;
 import org.wlow.iqabackend.data.entity.AssessRecord;
+import org.wlow.iqabackend.data.entity.FileEntry;
 import org.wlow.iqabackend.mapper.AssessRecordMapper;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -29,6 +30,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
@@ -36,7 +38,11 @@ import java.util.concurrent.Executors;
 
 /**
  * 将Spring Boot请求桥接到Python模型API.
- * 处理multipart编码与响应映射.
+ * 处理multipart编码、模型调用以及评估历史落库.
+ *
+ * 这里和旧版本最大的区别是:
+ * 评估完成后不再把图片压缩成Base64写进assess_record,
+ * 而是改为委托FileService把图片落盘, 然后只在历史记录里保存fileEntryId.
  */
 @Service
 @RequiredArgsConstructor
@@ -45,10 +51,11 @@ public class AssessService {
     private static final ExecutorService BATCH_SSE_EXECUTOR = Executors.newCachedThreadPool();
     private final RestClient modelApiRestClient;
     private final AssessRecordMapper assessRecordMapper;
-    private final ImageCompressService imageCompressService;
+    private final FileService fileService;
 
     /**
      * 调用/predict处理单个上传文件.
+     * 模型预测成功后, 再把原图保存到本地并写入历史记录.
      */
     public PredictResult assess(MultipartFile file) {
         validateFile(file);
@@ -62,32 +69,9 @@ public class AssessService {
     }
 
     /**
-     * 调用/predict/batch处理多个上传文件.
-     */
-    public BatchPredictResponse assessBatch(List<MultipartFile> files) {
-        if (files == null || files.isEmpty()) {
-            throw new IllegalArgumentException("files为空");
-        }
-        log.info("准备请求Python服务: 端点=/predict/batch, 文件数={}个", files.size());
-        for (MultipartFile file : files) {
-            log.info("批量文件: 文件名={}, 类型={}, 大小={}字节",
-                    safeName(file), safeContentType(file), file.getSize());
-        }
-        MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
-        for (MultipartFile file : files) {
-            validateFile(file);
-            body.add("files", toFilePart(file));
-        }
-        BatchPredictResponse response = executeBatchPredict(body);
-
-        // 批量评估成功后, 为每张图分别写入历史记录, 便于分页回看.
-        saveAssessRecords(files, response.getResults());
-        return response;
-    }
-
-    /**
      * 批量评估SSE流式接口.
      * 事件顺序: start -> progress(模型处理中) -> result/progress(逐图) -> completed.
+     * SSE线程不能继续依赖请求生命周期内的MultipartFile, 所以会先做字节快照.
      */
     public SseEmitter assessBatchStream(List<MultipartFile> files) {
         if (files == null || files.isEmpty()) {
@@ -109,19 +93,46 @@ public class AssessService {
 
     /**
      * 查询当前登录用户的评估历史记录.
+     * 查询主表后, 会额外批量查一次file_entry并把imageURL动态回填进去.
      */
     public Page<AssessRecord> history(int page, int pageSize) {
-        Integer userId = CurrentUser.getId();
-        if (userId == null) {
-            throw new IllegalArgumentException("当前用户未登录");
-        }
-
+        Integer userId = requireCurrentUserId();
         Page<AssessRecord> pageRequest = new Page<>(page, pageSize);
         QueryWrapper<AssessRecord> wrapper = new QueryWrapper<AssessRecord>()
                 .eq("user_id", userId)
                 .orderByDesc("assess_time");
 
-        return assessRecordMapper.selectPage(pageRequest, wrapper);
+        Page<AssessRecord> result = assessRecordMapper.selectPage(pageRequest, wrapper);
+        fillHistoryImageURLs(userId, result.getRecords());
+        return result;
+    }
+
+    /**
+     * 按用户ID删除该用户的所有评估历史记录, 并连带删除对应的文件和FileEntry元数据.
+     * 这是一个显式传入userId的维护能力, 不依赖CurrentUser中的当前登录用户.
+     */
+    public int deleteAllHistoryByUserId(Integer userId) {
+        if (userId == null || userId <= 0) {
+            throw new IllegalArgumentException("userId必须大于0");
+        }
+
+        List<Integer> fileEntryIds = Optional.ofNullable(assessRecordMapper.selectFileEntryIdsByUserId(userId))
+                .orElse(List.of())
+                .stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (fileEntryIds.isEmpty()) {
+            return 0;
+        }
+
+        int deletedRecords = assessRecordMapper.deleteByUserId(userId);
+        for (Integer fileEntryId : fileEntryIds) {
+            if (fileEntryId != null) {
+                fileService.deleteOwnedFile(fileEntryId, userId);
+            }
+        }
+        return deletedRecords;
     }
 
     /**
@@ -135,84 +146,123 @@ public class AssessService {
 
     /**
      * 保存单条评估历史记录.
+     * 同步接口里使用MultipartFile版本, 这里先把文件读成字节数组, 再复用统一的落盘/落库逻辑.
      */
     private void saveAssessRecord(MultipartFile file, PredictResult result) {
-        Integer userId = CurrentUser.getId();
-        if (userId == null) {
-            throw new IllegalArgumentException("当前用户未登录");
+        Integer userId = requireCurrentUserId();
+        try {
+            saveAssessRecord(file.getBytes(), safeName(file), userId, result);
+        } catch (IOException ex) {
+            throw new IllegalArgumentException("读取上传文件失败: " + safeName(file), ex);
         }
-        AssessRecord record = buildRecord(file, userId, result);
-        assessRecordMapper.insert(record);
     }
 
     /**
      * 保存单条评估历史记录(字节快照版, 适用于异步SSE线程).
+     * 异步线程里已经拿到稳定的字节快照, 不会再触碰请求结束后可能失效的MultipartFile对象.
      */
     private void saveAssessRecord(UploadFileData file, Integer userId, PredictResult result) {
-        AssessRecord record = buildRecord(file, userId, result);
-        assessRecordMapper.insert(record);
+        saveAssessRecord(file.bytes(), file.filename(), userId, result);
     }
 
     /**
-     * 批量保存评估历史记录.
+     * 保存单条评估历史记录(字节数组版).
+     * 共享单图与SSE批量落库逻辑, 并负责失败补偿.
+     *
+     * 固定顺序:
+     * 1. FileService.upload 写磁盘并插入file_entry
+     * 2. 组装AssessRecord并插入assess_record
+     * 3. 如果第2步失败, 反向删除第1步产生的文件和元数据
      */
-    private void saveAssessRecords(List<MultipartFile> files, List<PredictResult> results) {
-        Integer userId = CurrentUser.getId();
-        if (userId == null) {
-            throw new IllegalArgumentException("当前用户未登录");
-        }
-
-        List<AssessRecord> records = new ArrayList<>(files.size());
-        for (int i = 0; i < files.size(); i++) {
-            PredictResult result = (results != null && i < results.size()) ? results.get(i) : null;
-            records.add(buildRecord(files.get(i), userId, result));
-        }
-        for (AssessRecord record : records) {
+    void saveAssessRecord(byte[] fileBytes, String originalFilename, Integer userId, PredictResult result) {
+        FileEntry fileEntry = null;
+        try {
+            fileEntry = fileService.upload(fileBytes, originalFilename, userId);
+            AssessRecord record = buildRecord(originalFilename, userId, fileEntry, result);
             assessRecordMapper.insert(record);
+        } catch (RuntimeException ex) {
+            rollbackFileEntry(fileEntry, ex);
+            throw ex;
         }
     }
 
     /**
      * 构建待入库历史记录.
-     * 图片会先压缩到15KB目标以内, 再转为Base64字符串.
+     * AssessRecord里保存的是前端展示需要的原始文件名, 不是磁盘上的UUID文件名.
      */
-    private AssessRecord buildRecord(MultipartFile file, Integer userId, PredictResult result) {
+    private AssessRecord buildRecord(String originalFilename, Integer userId, FileEntry fileEntry, PredictResult result) {
         AssessRecord record = new AssessRecord();
         record.setUserId(userId);
-        record.setFilename(safeName(file));
-        record.setBase64(imageCompressService.compressToBase64(file));
+        record.setFilename(originalFilename);
+        record.setFileEntryId(fileEntry.getId());
+        record.setImageURL(fileEntry.getResourceURL());
         record.setAssessTime(LocalDateTime.now());
-        
+
         if (result != null) {
             record.setQualityScore((double) result.getQualityScore());
             record.setScene(result.getScene());
             record.setDistortions(result.getDistortions());
         }
-        
+
         return record;
     }
 
     /**
-     * 构建待入库历史记录(字节快照版).
+     * assess_record插入失败时的补偿逻辑.
+     * 由于FileService已经先创建了file_entry和物理文件, 这里必须显式回滚, 防止残留孤儿资源.
      */
-    private AssessRecord buildRecord(UploadFileData file, Integer userId, PredictResult result) {
-        AssessRecord record = new AssessRecord();
-        record.setUserId(userId);
-        record.setFilename(file.filename());
-        record.setBase64(imageCompressService.compressToBase64(file.bytes()));
-        record.setAssessTime(LocalDateTime.now());
-        
-        if (result != null) {
-            record.setQualityScore((double) result.getQualityScore());
-            record.setScene(result.getScene());
-            record.setDistortions(result.getDistortions());
+    private void rollbackFileEntry(FileEntry fileEntry, RuntimeException cause) {
+        if (fileEntry == null || fileEntry.getId() == null) {
+            return;
         }
-        
-        return record;
+        try {
+            fileService.deleteFileEntry(fileEntry);
+        } catch (RuntimeException cleanupEx) {
+            log.error("回滚文件元数据失败, fileEntryId={}", fileEntry.getId(), cleanupEx);
+            cause.addSuppressed(cleanupEx);
+        }
+    }
+
+    /**
+     * 批量回填历史记录里的imageURL.
+     * 这里按fileEntryId去重后一次查库, 避免records.size()条历史触发同等数量的文件元数据查询.
+     */
+    private void fillHistoryImageURLs(Integer userId, List<AssessRecord> records) {
+        if (records == null || records.isEmpty()) {
+            return;
+        }
+        List<Integer> fileEntryIds = records.stream()
+                .map(AssessRecord::getFileEntryId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (fileEntryIds.isEmpty()) {
+            return;
+        }
+        Map<Integer, FileEntry> fileEntryMap = fileService.mapOwnedFileEntriesByIds(userId, fileEntryIds);
+        for (AssessRecord record : records) {
+            FileEntry entry = fileEntryMap.get(record.getFileEntryId());
+            if (entry != null) {
+                record.setImageURL(entry.getResourceURL());
+            }
+        }
+    }
+
+    /**
+     * 统一读取当前登录用户ID.
+     * 这样单图、历史查询和后续其它逻辑都不用重复写相同的空值判断.
+     */
+    private Integer requireCurrentUserId() {
+        Integer userId = CurrentUser.getId();
+        if (userId == null) {
+            throw new IllegalArgumentException("当前用户未登录");
+        }
+        return userId;
     }
 
     /**
      * 构建multipart部分, 保留文件名与内容类型.
+     * 这里的resource只用于发给Python模型服务, 和本地文件系统存储无关.
      */
     private HttpEntity<Resource> toFilePart(MultipartFile file) {
         try {
@@ -234,6 +284,7 @@ public class AssessService {
 
     /**
      * 构建multipart部分(字节快照版), 避免异步线程访问请求生命周期内对象.
+     * SSE异步分支会走这个版本, 直接用快照字节重新包装成multipart part.
      */
     private HttpEntity<Resource> toFilePart(UploadFileData file) {
         ByteArrayResource resource = new ByteArrayResource(file.bytes()) {
@@ -273,6 +324,7 @@ public class AssessService {
 
     /**
      * 将MultipartFile转为内存快照, 防止请求结束后文件对象失效.
+     * 这里只保留后续真正需要的三个字段: 原始文件名、内容类型、字节数组.
      */
     private List<UploadFileData> snapshotFiles(List<MultipartFile> files) {
         List<UploadFileData> snapshots = new ArrayList<>(files.size());
@@ -289,6 +341,8 @@ public class AssessService {
 
     /**
      * 组织批量评估SSE推送逻辑.
+     * 每张图片的结果写回顺序是:
+     * 模型结果事件 -> 文件落盘与历史入库 -> 已保存事件.
      */
     private void streamBatchAssess(List<UploadFileData> files, Integer userId, SseEmitter emitter) {
         int total = files.size();
@@ -374,7 +428,14 @@ public class AssessService {
     }
 
     private String safeName(MultipartFile file) {
-        return Optional.ofNullable(file.getOriginalFilename()).orElse("file");
+        String originalFilename = Optional.ofNullable(file.getOriginalFilename())
+                .map(String::trim)
+                .orElse("")
+                .replace("\\", "/");
+        // 只保留客户端传来的最终文件名部分, 不让本地路径片段进入业务字段.
+        int lastSlash = originalFilename.lastIndexOf('/');
+        String filename = lastSlash >= 0 ? originalFilename.substring(lastSlash + 1) : originalFilename;
+        return filename.isBlank() ? "file" : filename;
     }
 
     private String safeContentType(MultipartFile file) {
@@ -383,6 +444,7 @@ public class AssessService {
 
     /**
      * 上传文件快照.
+     * filename是原始文件名, 不是UUID文件名; UUID命名在FileService里统一处理.
      */
     private record UploadFileData(String filename, String contentType, byte[] bytes) {
     }

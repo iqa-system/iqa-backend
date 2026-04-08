@@ -159,6 +159,46 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponsePageAssessRecord"
+  /resource/image/{fileEntryId}:
+    get:
+      summary: 获取当前用户图片资源
+      description: 根据fileEntryId读取当前登录用户自己的图片文件.
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - name: fileEntryId
+          in: path
+          required: true
+          description: 文件元数据主键.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      responses:
+        "200":
+          description: 请求成功, 返回图片文件流
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 无权访问其他用户的图片
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "404":
+          description: 图片资源不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
   /user/info:
     get:
       summary: 获取当前用户信息
@@ -383,9 +423,13 @@ components:
           format: int32
         filename:
           type: string
-        base64:
+        fileEntryId:
+          type: integer
+          format: int32
+          description: 对应文件元数据主键.
+        imageURL:
           type: string
-          description: 压缩后图片的Base64字符串.
+          description: 图片资源相对路径, 可直接GET访问.
         assessTime:
           type: string
           format: date-time

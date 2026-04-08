@@ -21,6 +21,10 @@ server:
 model-api:
   base-url: http://localhost:8000
 
+# user.dir是JVM系统属性, 代表当前 JVM 进程启动时的工作目录, 通常是项目根目录, 但也可能因运行环境不同而有所变化
+file-storage:
+  root-dir: ${user.dir}/upload
+
 # JWT
 jwt:
   secret-key:
