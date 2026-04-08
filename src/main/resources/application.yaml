@@ -10,6 +10,20 @@ spring:
     multipart:
       max-file-size: 10MB
       max-request-size: 20MB
+  mail:
+    host: smtphz.qiye.163.com
+    port: 465
+    username: 202200300334@mail.sdu.edu.cn
+    password: dtMXSEgcWT$#2NDr
+    protocol: smtp
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+    ssl:
+      enabled: true
 
 server:
   port: 8080
@@ -33,3 +47,11 @@ jwt:
   expiration:
     # 单位为秒
     access-token: 432000 # 5天
+
+# 找回密码配置
+password-reset:
+  # 验证码过期时间, 单位为秒
+  code-expiration-seconds: 600
+  # 验证码发送冷却时间, 单位为秒
+  send-cooldown-seconds: 60
+  max-attempts: 5

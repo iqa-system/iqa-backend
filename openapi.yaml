@@ -79,6 +79,87 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponseAuthTokenResponse"
+  /auth/password-reset/send-code:
+    post:
+      summary: 发送找回密码验证码
+      description: |
+        向指定邮箱发送6位数字验证码。
+        为避免邮箱枚举，无论邮箱是否存在都返回统一成功文案。
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - email
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "400":
+          description: 邮箱参数非法
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "500":
+          description: 邮件发送失败或服务端异常
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+  /auth/password-reset/reset:
+    post:
+      summary: 校验验证码并重置密码
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - email
+                - code
+                - newPassword
+              properties:
+                email:
+                  type: string
+                  format: email
+                code:
+                  type: string
+                  description: 6位数字验证码
+                  pattern: '^\d{6}$'
+                newPassword:
+                  type: string
+                  minLength: 6
+                  maxLength: 64
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "400":
+          description: 验证码错误、已过期或参数非法
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "500":
+          description: 服务端异常
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
   /assess:
     post:
       summary: 单张图片评估
@@ -557,8 +638,7 @@ components:
         email:
           type: string
           format: email
-          nullable: true
-          description: 用户邮箱. 旧用户可能暂时为空.
+          description: 用户邮箱.
         role:
           type: string
           description: 用户角色.

@@ -3,9 +3,23 @@ CREATE TABLE IF NOT EXISTS `user` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `username` VARCHAR(50) NOT NULL UNIQUE,
   `password` VARCHAR(255) NOT NULL,
-  `email` VARCHAR(255) NULL UNIQUE,
+  `email` VARCHAR(255) NOT NULL UNIQUE,
   `role` VARCHAR(20) NOT NULL DEFAULT 'USER',
   `register_time` DATETIME default CURRENT_TIMESTAMP NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 密码重置验证码表
+CREATE TABLE IF NOT EXISTS `password_reset_code` (
+  `id` INT PRIMARY KEY AUTO_INCREMENT,
+  `user_id` INT NOT NULL,
+  `email` VARCHAR(255) NOT NULL,
+  `code_hash` VARCHAR(255) NOT NULL,
+  `expires_at` DATETIME NOT NULL,
+  `attempt_count` INT NOT NULL DEFAULT 0,
+  `consumed_at` DATETIME NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  INDEX `idx_password_reset_email_created` (`email`, `created_at`),
+  INDEX `idx_password_reset_user_created` (`user_id`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 文件元数据表
@@ -21,7 +35,6 @@ INDEX `idx_file_entry_user_time` (`user_id`, `upload_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 图片评估历史记录表
--- 旧历史记录在本次升级中直接清空, 不做Base64迁移
 CREATE TABLE `assess_record` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `user_id` INT NOT NULL,
