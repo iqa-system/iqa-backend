@@ -8,6 +8,7 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
@@ -19,6 +20,8 @@ import org.wlow.iqabackend.data.dto.BatchPredictResponse;
 import org.wlow.iqabackend.data.dto.PredictResult;
 import org.wlow.iqabackend.data.entity.AssessRecord;
 import org.wlow.iqabackend.data.entity.FileEntry;
+import org.wlow.iqabackend.exception.AssessRecordAccessDeniedException;
+import org.wlow.iqabackend.exception.AssessRecordNotFoundException;
 import org.wlow.iqabackend.mapper.AssessRecordMapper;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -108,29 +111,44 @@ public class AssessService {
     }
 
     /**
-     * 按用户ID删除该用户的所有评估历史记录, 并连带删除对应的文件和FileEntry元数据.
-     * 这是一个显式传入userId的维护能力, 不依赖CurrentUser中的当前登录用户.
+     * 批量删除当前用户选中的评估历史记录.
+     * 删除链路要求严格原子语义:
+     * 1. 请求中的所有ID都必须存在
+     * 2. 所有记录都必须属于当前用户
+     * 3. 任一步失败都会抛异常, 触发数据库事务回滚
      */
-    public int deleteAllHistoryByUserId(Integer userId) {
-        if (userId == null || userId <= 0) {
-            throw new IllegalArgumentException("userId必须大于0");
+    @Transactional(rollbackFor = Exception.class)
+    public int deleteHistory(List<Integer> ids) {
+        Integer userId = requireCurrentUserId();
+        List<Integer> historyIds = normalizeHistoryIds(ids);
+        List<AssessRecord> records = Optional.ofNullable(assessRecordMapper.selectByIdList(historyIds))
+                .orElse(List.of());
+
+        // 先校验是否存在缺失记录. 只有全部都存在时, 才继续校验归属关系.
+        if (records.size() != historyIds.size()) {
+            throw new AssessRecordNotFoundException("存在不存在的评估历史记录");
         }
 
-        List<Integer> fileEntryIds = Optional.ofNullable(assessRecordMapper.selectFileEntryIdsByUserId(userId))
-                .orElse(List.of())
-                .stream()
+        boolean containsForeignRecord = records.stream()
+                .anyMatch(record -> !userId.equals(record.getUserId()));
+        if (containsForeignRecord) {
+            throw new AssessRecordAccessDeniedException("无权删除其他用户的评估历史记录");
+        }
+
+        List<Integer> fileEntryIds = records.stream()
+                .filter(Objects::nonNull)
+                .map(AssessRecord::getFileEntryId)
                 .filter(Objects::nonNull)
                 .distinct()
                 .toList();
-        if (fileEntryIds.isEmpty()) {
-            return 0;
+
+        int deletedRecords = assessRecordMapper.deleteByUserIdAndIds(userId, historyIds);
+        if (deletedRecords != historyIds.size()) {
+            throw new IllegalStateException("删除评估历史记录失败");
         }
 
-        int deletedRecords = assessRecordMapper.deleteByUserId(userId);
         for (Integer fileEntryId : fileEntryIds) {
-            if (fileEntryId != null) {
-                fileService.deleteOwnedFile(fileEntryId, userId);
-            }
+            fileService.deleteOwnedFile(fileEntryId, userId);
         }
         return deletedRecords;
     }
@@ -246,6 +264,29 @@ public class AssessService {
                 record.setImageURL(entry.getResourceURL());
             }
         }
+    }
+
+    /**
+     * 归一化待删除的历史记录ID列表.
+     * Controller已经做了基础校验, 这里再兜底一次, 并去重保证批量删除计数稳定.
+     */
+    private List<Integer> normalizeHistoryIds(List<Integer> ids) {
+        if (ids == null || ids.isEmpty()) {
+            throw new IllegalArgumentException("ids不能为空");
+        }
+        if (ids.stream().anyMatch(Objects::isNull)) {
+            throw new IllegalArgumentException("id不能为空");
+        }
+        if (ids.stream().anyMatch(id -> id <= 0)) {
+            throw new IllegalArgumentException("id必须大于0");
+        }
+        List<Integer> normalizedIds = ids.stream()
+                .distinct()
+                .toList();
+        if (normalizedIds.isEmpty()) {
+            throw new IllegalArgumentException("ids不能为空");
+        }
+        return normalizedIds;
     }
 
     /**

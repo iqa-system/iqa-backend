@@ -159,6 +159,61 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponsePageAssessRecord"
+    delete:
+      summary: 批量删除当前用户图片评估历史
+      description: |
+        按评估历史记录id数组批量删除当前登录用户自己的历史记录.
+        删除时会同时清理assess_record、file_entry以及本地磁盘文件.
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  description: 待删除的评估历史记录主键数组.
+                  minItems: 1
+                  items:
+                    type: integer
+                    format: int32
+                    minimum: 1
+      responses:
+        "200":
+          description: 请求成功, 返回实际删除的历史记录条数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseInteger"
+        "400":
+          description: 请求体为空、ids为空、元素非法或JSON格式错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "401":
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 请求中包含不属于当前用户的评估历史记录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "404":
+          description: 请求中存在不存在的评估历史记录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
   /resource/image/{fileEntryId}:
     get:
       summary: 获取当前用户图片资源
@@ -342,6 +397,20 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/PageAssessRecord"
+      required:
+        - code
+        - message
+    ResponseInteger:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+        data:
+          type: integer
+          format: int32
       required:
         - code
         - message

@@ -15,15 +15,35 @@ import java.util.List;
 @Mapper
 public interface AssessRecordMapper extends BaseMapper<AssessRecord> {
     /**
-     * 查询指定用户的全部关联文件主键.
+     * 按主键集合查询评估历史记录.
+     * 这里只查删除链路真正需要的字段, 避免引入与业务无关的列.
      */
-    @Select("SELECT file_entry_id FROM assess_record WHERE user_id = #{userId}")
-    List<Integer> selectFileEntryIdsByUserId(@Param("userId") Integer userId);
+    @Select({
+            "<script>",
+            "SELECT id, user_id, file_entry_id",
+            "FROM assess_record",
+            "WHERE id IN",
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>",
+            "#{id}",
+            "</foreach>",
+            "</script>"
+    })
+    List<AssessRecord> selectByIdList(@Param("ids") List<Integer> ids);
 
     /**
-     * 删除指定用户的全部评估历史记录.
+     * 删除当前用户指定主键集合的评估历史记录.
+     * user_id条件和id集合同时生效, 防止误删其他用户数据.
      */
-    @Delete("DELETE FROM assess_record WHERE user_id = #{userId}")
-    int deleteByUserId(@Param("userId") Integer userId);
+    @Delete({
+            "<script>",
+            "DELETE FROM assess_record",
+            "WHERE user_id = #{userId}",
+            "AND id IN",
+            "<foreach collection='ids' item='id' open='(' separator=',' close=')'>",
+            "#{id}",
+            "</foreach>",
+            "</script>"
+    })
+    int deleteByUserIdAndIds(@Param("userId") Integer userId, @Param("ids") List<Integer> ids);
 }
 

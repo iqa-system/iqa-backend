@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.MyBatisSystemException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -94,6 +95,16 @@ public class GlobalHandler {
     }
 
     /**
+     * 处理JSON请求体结构错误或类型不匹配等反序列化异常.
+     * DELETE /assess/history 这样的JSON接口会走到这里, 统一返回400而不是500.
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public Response<String> handleHttpMessageNotReadableException(HttpMessageNotReadableException e){
+        log.warn("请求体格式不正确: {}", e.getMessage());
+        return Response.failure(400, "请求体格式不正确");
+    }
+
+    /**
      * 处理远程模型服务调用异常.
      */
     @ExceptionHandler(RestClientException.class)
@@ -113,6 +124,20 @@ public class GlobalHandler {
     @ExceptionHandler(FileResourceNotFoundException.class)
     public Response<String> handleFileResourceNotFoundException(FileResourceNotFoundException e) {
         log.warn("文件资源不存在: {}", e.getMessage());
+        return Response.failure(404, e.getMessage());
+    }
+
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    @ExceptionHandler(AssessRecordAccessDeniedException.class)
+    public Response<String> handleAssessRecordAccessDeniedException(AssessRecordAccessDeniedException e) {
+        log.warn("评估历史记录访问被拒绝: {}", e.getMessage());
+        return Response.failure(403, e.getMessage());
+    }
+
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    @ExceptionHandler(AssessRecordNotFoundException.class)
+    public Response<String> handleAssessRecordNotFoundException(AssessRecordNotFoundException e) {
+        log.warn("评估历史记录不存在: {}", e.getMessage());
         return Response.failure(404, e.getMessage());
     }
 

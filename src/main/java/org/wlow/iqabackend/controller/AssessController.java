@@ -1,17 +1,19 @@
 package org.wlow.iqabackend.controller;
 
 import jakarta.validation.constraints.NotEmpty;
-import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
@@ -21,6 +23,7 @@ import org.wlow.iqabackend.data.entity.AssessRecord;
 import org.wlow.iqabackend.service.AssessService;
 
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/assess")
@@ -58,6 +61,18 @@ public class AssessController {
             @RequestParam(defaultValue = "10") @Positive(message = "pageSize必须大于0") Integer pageSize) {
         Page<AssessRecord> result = assessService.history(page, pageSize);
         return Response.success(result);
+    }
+
+    /**
+     * 批量删除当前用户选中的评估历史记录.
+     * 请求体使用JSON传递id数组, 方便前端多选后一次性提交删除.
+     */
+    @DeleteMapping("/history")
+    public Response<Integer> deleteHistory(@RequestBody Map<String, List<Integer>> request) {
+        // 这里直接从请求体中读取ids数组, 避免为单一字段再单独维护一个DTO类.
+        List<Integer> ids = request == null ? null : request.get("ids");
+        int deletedCount = assessService.deleteHistory(ids);
+        return Response.success(deletedCount);
     }
 }
 
