@@ -23,6 +23,7 @@ import org.wlow.iqabackend.data.entity.FileEntry;
 import org.wlow.iqabackend.exception.AssessRecordAccessDeniedException;
 import org.wlow.iqabackend.exception.AssessRecordNotFoundException;
 import org.wlow.iqabackend.mapper.AssessRecordMapper;
+import org.wlow.iqabackend.util.Common;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -41,7 +42,7 @@ import java.util.concurrent.Executors;
 
 /**
  * 将Spring Boot请求桥接到Python模型API.
- * 处理multipart编码、模型调用以及评估历史落库.
+ * 处理multipart编码, 模型调用以及评估历史落库.
  *
  * 这里和旧版本最大的区别是:
  * 评估完成后不再把图片压缩成Base64写进assess_record,
@@ -120,7 +121,7 @@ public class AssessService {
     @Transactional(rollbackFor = Exception.class)
     public int deleteHistory(List<Integer> ids) {
         Integer userId = requireCurrentUserId();
-        List<Integer> historyIds = normalizeHistoryIds(ids);
+        List<Integer> historyIds = Common.normalizeIds(ids);
         List<AssessRecord> records = Optional.ofNullable(assessRecordMapper.selectByIdList(historyIds))
                 .orElse(List.of());
 
@@ -267,31 +268,8 @@ public class AssessService {
     }
 
     /**
-     * 归一化待删除的历史记录ID列表.
-     * Controller已经做了基础校验, 这里再兜底一次, 并去重保证批量删除计数稳定.
-     */
-    private List<Integer> normalizeHistoryIds(List<Integer> ids) {
-        if (ids == null || ids.isEmpty()) {
-            throw new IllegalArgumentException("ids不能为空");
-        }
-        if (ids.stream().anyMatch(Objects::isNull)) {
-            throw new IllegalArgumentException("id不能为空");
-        }
-        if (ids.stream().anyMatch(id -> id <= 0)) {
-            throw new IllegalArgumentException("id必须大于0");
-        }
-        List<Integer> normalizedIds = ids.stream()
-                .distinct()
-                .toList();
-        if (normalizedIds.isEmpty()) {
-            throw new IllegalArgumentException("ids不能为空");
-        }
-        return normalizedIds;
-    }
-
-    /**
      * 统一读取当前登录用户ID.
-     * 这样单图、历史查询和后续其它逻辑都不用重复写相同的空值判断.
+     * 这样单图, 历史查询和后续其它逻辑都不用重复写相同的空值判断.
      */
     private Integer requireCurrentUserId() {
         Integer userId = CurrentUser.getId();
@@ -365,7 +343,7 @@ public class AssessService {
 
     /**
      * 将MultipartFile转为内存快照, 防止请求结束后文件对象失效.
-     * 这里只保留后续真正需要的三个字段: 原始文件名、内容类型、字节数组.
+     * 这里只保留后续真正需要的三个字段: 原始文件名, 内容类型, 字节数组.
      */
     private List<UploadFileData> snapshotFiles(List<MultipartFile> files) {
         List<UploadFileData> snapshots = new ArrayList<>(files.size());

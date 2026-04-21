@@ -5,9 +5,22 @@ info:
   description: 图像质量评估 API。
 servers:
   - url: http://localhost:8080
+tags:
+  - name: auth
+    description: 登录, 注册, 刷新令牌与找回密码相关接口.
+  - name: assess
+    description: 图片质量评估与当前用户评估历史相关接口.
+  - name: user
+    description: 当前登录用户信息与资料更新接口.
+  - name: admin
+    description: 管理员用户管理与全站评估历史管理接口.
+  - name: resource
+    description: 图片资源访问接口.
 paths:
   /auth/sign-up:
     post:
+      tags:
+        - auth
       summary: 用户注册
       requestBody:
         required: true
@@ -36,6 +49,8 @@ paths:
                 $ref: "#/components/schemas/ResponseString"
   /auth/login:
     post:
+      tags:
+        - auth
       summary: 用户登录
       requestBody:
         required: true
@@ -60,6 +75,8 @@ paths:
                 $ref: "#/components/schemas/ResponseAuthTokenResponse"
   /auth/refresh:
     post:
+      tags:
+        - auth
       summary: 刷新AccessToken
       requestBody:
         required: true
@@ -81,6 +98,8 @@ paths:
                 $ref: "#/components/schemas/ResponseAuthTokenResponse"
   /auth/password-reset/send-code:
     post:
+      tags:
+        - auth
       summary: 发送找回密码验证码
       description: |
         向指定邮箱发送6位数字验证码。
@@ -118,6 +137,8 @@ paths:
                 $ref: "#/components/schemas/ResponseString"
   /auth/password-reset/reset:
     post:
+      tags:
+        - auth
       summary: 校验验证码并重置密码
       requestBody:
         required: true
@@ -162,6 +183,8 @@ paths:
                 $ref: "#/components/schemas/ResponseString"
   /assess:
     post:
+      tags:
+        - assess
       summary: 单张图片评估
       parameters:
         - $ref: "#/components/parameters/AuthorizationHeader"
@@ -186,6 +209,8 @@ paths:
                 $ref: "#/components/schemas/ResponsePredictResult"
   /assess/batch:
     post:
+      tags:
+        - assess
       summary: 多张图片评估(SSE进度流)
       description: |
         返回text/event-stream流式事件.
@@ -215,6 +240,8 @@ paths:
                 $ref: "#/components/schemas/AssessBatchSseStream"
   /assess/history:
     get:
+      tags:
+        - assess
       summary: 查询当前用户图片评估历史
       description: 分页查询当前登录用户的历史记录. page从1开始.
       parameters:
@@ -245,6 +272,8 @@ paths:
               schema:
                 $ref: "#/components/schemas/ResponsePageAssessRecord"
     delete:
+      tags:
+        - assess
       summary: 批量删除当前用户图片评估历史
       description: |
         按评估历史记录id数组批量删除当前登录用户自己的历史记录.
@@ -299,10 +328,329 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponseString"
+  /admin/users:
+    get:
+      tags:
+        - admin
+      summary: 管理员分页查询用户列表
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - name: page
+          in: query
+          required: false
+          description: 页码, 从1开始.
+          schema:
+            type: integer
+            format: int32
+            default: 1
+            minimum: 1
+        - name: pageSize
+          in: query
+          required: false
+          description: 每页条数.
+          schema:
+            type: integer
+            format: int32
+            default: 10
+            minimum: 1
+        - name: username
+          in: query
+          required: false
+          description: 用户名模糊搜索条件, 可留空.
+          schema:
+            type: string
+        - name: email
+          in: query
+          required: false
+          description: 邮箱模糊搜索条件, 可留空.
+          schema:
+            type: string
+            format: email
+        - name: role
+          in: query
+          required: false
+          description: 角色精确筛选条件, 可留空.
+          schema:
+            type: string
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponsePageUserInfo"
+        "400":
+          description: 请求参数非法
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "401":
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 无权访问管理员接口
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+    delete:
+      tags:
+        - admin
+      summary: 管理员批量删除用户
+      description: |
+        按用户id数组批量删除用户.
+        删除时会同时清理password_reset_code、assess_record、file_entry以及本地磁盘文件.
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: integer
+                    format: int32
+                    minimum: 1
+      responses:
+        "200":
+          description: 请求成功, 返回实际删除的用户数量
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseInteger"
+        "400":
+          description: 请求体为空、ids为空、元素非法或JSON格式错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "401":
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 无权访问管理员接口
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "404":
+          description: 请求中存在不存在的用户
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+  /admin/users/{id}/role:
+    post:
+      tags:
+        - admin
+      summary: 管理员修改用户角色
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - name: id
+          in: path
+          required: true
+          description: 目标用户主键.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required:
+                - role
+              properties:
+                role:
+                  type: string
+                  description: 新角色字符串, 不能为空.
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "400":
+          description: 请求参数非法
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "401":
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 无权访问管理员接口
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "404":
+          description: 目标用户不存在
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+  /admin/assess/history:
+    get:
+      tags:
+        - admin
+      summary: 管理员分页查询全站评估历史
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - name: page
+          in: query
+          required: false
+          description: 页码, 从1开始.
+          schema:
+            type: integer
+            format: int32
+            default: 1
+            minimum: 1
+        - name: pageSize
+          in: query
+          required: false
+          description: 每页条数.
+          schema:
+            type: integer
+            format: int32
+            default: 10
+            minimum: 1
+        - name: userId
+          in: query
+          required: false
+          description: 用户主键筛选条件, 可留空.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+        - name: filename
+          in: query
+          required: false
+          description: 文件名模糊搜索条件, 可留空.
+          schema:
+            type: string
+        - name: startTime
+          in: query
+          required: false
+          description: 评估开始时间(ISO-8601), 可留空.
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: false
+          description: 评估结束时间(ISO-8601), 可留空.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponsePageAdminAssessRecord"
+        "400":
+          description: 请求参数非法
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "401":
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 无权访问管理员接口
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+    delete:
+      tags:
+        - admin
+      summary: 管理员批量删除全站评估历史
+      description: |
+        按评估历史记录id数组批量删除任意用户的历史记录.
+        删除时会同时清理assess_record、file_entry以及本地磁盘文件.
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - ids
+              properties:
+                ids:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: integer
+                    format: int32
+                    minimum: 1
+      responses:
+        "200":
+          description: 请求成功, 返回实际删除的历史记录条数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseInteger"
+        "400":
+          description: 请求体为空、ids为空、元素非法或JSON格式错误
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "401":
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 无权访问管理员接口
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "404":
+          description: 请求中存在不存在的评估历史记录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
   /resource/image/{fileEntryId}:
     get:
-      summary: 获取当前用户图片资源
-      description: 根据fileEntryId读取当前登录用户自己的图片文件.
+      tags:
+        - resource
+      summary: 获取可访问的图片资源
+      description: 根据fileEntryId读取图片文件. 文件所有者或ADMIN角色均可访问.
       parameters:
         - $ref: "#/components/parameters/AuthorizationHeader"
         - name: fileEntryId
@@ -328,7 +676,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ResponseString"
         "403":
-          description: 无权访问其他用户的图片
+          description: 无权访问该图片资源
           content:
             application/json:
               schema:
@@ -341,6 +689,8 @@ paths:
                 $ref: "#/components/schemas/ResponseString"
   /user/info:
     get:
+      tags:
+        - user
       summary: 获取当前用户信息
       description: 获取当前登录用户的基本信息.
       parameters:
@@ -354,6 +704,8 @@ paths:
                 $ref: "#/components/schemas/ResponseUserInfo"
   /user/update-info:
     post:
+      tags:
+        - user
       summary: 更新用户信息
       description: |
         支持修改用户名、邮箱和密码.
@@ -487,6 +839,32 @@ components:
           type: string
         data:
           $ref: "#/components/schemas/PageAssessRecord"
+      required:
+        - code
+        - message
+    ResponsePageUserInfo:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/PageUserInfo"
+      required:
+        - code
+        - message
+    ResponsePageAdminAssessRecord:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/PageAdminAssessRecord"
       required:
         - code
         - message
@@ -625,6 +1003,78 @@ components:
         pages:
           type: integer
           format: int64
+    PageUserInfo:
+      type: object
+      description: MyBatis-Plus分页结果.
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/UserInfo"
+        total:
+          type: integer
+          format: int64
+        size:
+          type: integer
+          format: int64
+        current:
+          type: integer
+          format: int64
+        pages:
+          type: integer
+          format: int64
+    AdminAssessRecordView:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int32
+        userId:
+          type: integer
+          format: int32
+        username:
+          type: string
+        filename:
+          type: string
+        fileEntryId:
+          type: integer
+          format: int32
+        imageURL:
+          type: string
+          description: 图片资源相对路径, 管理员可直接GET访问.
+        assessTime:
+          type: string
+          format: date-time
+        qualityScore:
+          type: number
+          format: double
+        scene:
+          type: integer
+          format: int32
+        distortions:
+          type: array
+          items:
+            $ref: "#/components/schemas/DistortionProb"
+    PageAdminAssessRecord:
+      type: object
+      description: MyBatis-Plus分页结果.
+      properties:
+        records:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminAssessRecordView"
+        total:
+          type: integer
+          format: int64
+        size:
+          type: integer
+          format: int64
+        current:
+          type: integer
+          format: int64
+        pages:
+          type: integer
+          format: int64
     UserInfo:
       type: object
       properties:
@@ -641,10 +1091,7 @@ components:
           description: 用户邮箱.
         role:
           type: string
-          description: 用户角色.
-          enum:
-            - USER
-            - ADMIN
+          description: 用户角色字符串. 当前管理员权限只认ADMIN, 其余角色值原样透传.
         registerTime:
           type: string
           format: date-time

@@ -31,6 +31,22 @@ public interface AssessRecordMapper extends BaseMapper<AssessRecord> {
     List<AssessRecord> selectByIdList(@Param("ids") List<Integer> ids);
 
     /**
+     * 按用户主键集合查询其名下的评估历史记录.
+     * 这里只查删除用户链路真正需要的最小字段, 避免把distortions等大字段一并查出.
+     */
+    @Select({
+            "<script>",
+            "SELECT id, user_id, file_entry_id",
+            "FROM assess_record",
+            "WHERE user_id IN",
+            "<foreach collection='userIds' item='userId' open='(' separator=',' close=')'>",
+            "#{userId}",
+            "</foreach>",
+            "</script>"
+    })
+    List<AssessRecord> selectByUserIdList(@Param("userIds") List<Integer> userIds);
+
+    /**
      * 删除当前用户指定主键集合的评估历史记录.
      * user_id条件和id集合同时生效, 防止误删其他用户数据.
      */

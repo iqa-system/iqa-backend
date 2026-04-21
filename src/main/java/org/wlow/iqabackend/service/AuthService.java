@@ -101,6 +101,8 @@ public class AuthService {
      * 统一构建Token返回体.
      */
     private AuthTokenResponse buildTokenResponse(User user) {
+        // Token中的role直接沿用数据库角色值(仅对USER/ADMIN做标准化大小写),
+        // 这样未来新增的扩展角色也能完整透传到前端和后续业务链路.
         String token = jwtService.generateAccessToken(
                 user.getUsername(),
                 user.getId(),

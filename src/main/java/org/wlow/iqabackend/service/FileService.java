@@ -8,6 +8,7 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.wlow.iqabackend.data.UserRole;
 import org.wlow.iqabackend.data.entity.FileEntry;
 import org.wlow.iqabackend.exception.FileAccessDeniedException;
 import org.wlow.iqabackend.exception.FileResourceNotFoundException;
@@ -29,7 +30,7 @@ import java.util.stream.Collectors;
 
 /**
  * 文件存储服务.
- * 负责评估图片在本地文件系统中的上传、查询和删除.
+ * 负责评估图片在本地文件系统中的上传, 查询和删除.
  * <p>
  * 设计约束:
  * 1. 数据库只保存文件元数据, 真实文件内容存磁盘.
@@ -86,7 +87,7 @@ public class FileService {
         String safeOriginalFilename = extractClientFilename(originalFilename);
         String extname = extractExtname(safeOriginalFilename);
 
-        // 磁盘文件名统一改成UUID, 规避同名覆盖、特殊字符和原始文件名泄露问题.
+        // 磁盘文件名统一改成UUID, 规避同名覆盖, 特殊字符和原始文件名泄露问题.
         String uuidFilename = UUID.randomUUID().toString();
 
         // 图片按用户分目录存储, 目录形如 <root>/image/{userId}.
@@ -152,6 +153,27 @@ public class FileService {
      */
     public StoredResource loadOwnedImage(Integer fileEntryId, Integer userId) {
         FileEntry entry = getOwnedFileEntry(fileEntryId, userId);
+        return loadStoredResource(entry);
+    }
+
+    /**
+     * 加载当前用户"可访问"的图片资源.
+     * <p>
+     * 与loadOwnedImage的区别在于:
+     * 1. 普通用户仍然只能访问自己的图片
+     * 2. ADMIN角色可以访问任意用户图片
+     * 3. ResourceController统一走这个入口, 避免Controller里散落角色分支
+     */
+    public StoredResource loadAccessibleImage(Integer fileEntryId, Integer userId, String currentRole) {
+        FileEntry entry = getAccessibleFileEntry(fileEntryId, userId, currentRole);
+        return loadStoredResource(entry);
+    }
+
+    /**
+     * 基于文件元数据真正读取磁盘文件.
+     * 这样权限判断和磁盘读取逻辑可以分层复用, 既方便普通用户读取, 也方便管理员读取.
+     */
+    private StoredResource loadStoredResource(FileEntry entry) {
         Path storedPath = resolveStoredPath(entry);
         if (!Files.isRegularFile(storedPath)) {
             throw new FileResourceNotFoundException("图片资源不存在");
@@ -167,7 +189,7 @@ public class FileService {
 
     /**
      * 删除当前用户拥有的文件及元数据.
-     * 当前阶段没有暴露删除Controller, 但先把服务能力准备好, 方便后续做“删历史同时删文件”.
+     * 当前阶段没有暴露删除Controller, 但先把服务能力准备好, 方便后续做"删历史同时删文件".
      */
     public void deleteOwnedFile(Integer fileEntryId, Integer userId) {
         FileEntry entry = getOwnedFileEntry(fileEntryId, userId);
@@ -178,7 +200,7 @@ public class FileService {
      * 删除文件元数据及磁盘文件.
      * 先删数据库记录, 再删文件, 降低悬挂元数据风险.
      * <p>
-     * 这里选择“先删库再删文件”的原因是:
+     * 这里选择"先删库再删文件"的原因是:
      * 如果先删文件再删库, 一旦删库失败, 前端还能查到一条已经无法访问的记录.
      * 先删库可以优先保证业务侧不再暴露这条资源.
      */
@@ -205,18 +227,43 @@ public class FileService {
 
     /**
      * 读取单个文件元数据并做归属校验.
-     * 不在这里直接返回文件流, 是为了把“权限判断”和“物理文件读取”拆开, 各自职责更清晰.
+     * 不在这里直接返回文件流, 是为了把"权限判断"和"物理文件读取"拆开, 各自职责更清晰.
      */
     private FileEntry getOwnedFileEntry(Integer fileEntryId, Integer userId) {
-        validateUserId(userId);
-        FileEntry entry = fileEntryMapper.selectById(fileEntryId);
-        if (entry == null) {
-            throw new FileResourceNotFoundException("图片资源不存在");
-        }
+        FileEntry entry = getExistingFileEntry(fileEntryId);
         if (!userId.equals(entry.getUserId())) {
             throw new FileAccessDeniedException("无权访问该图片");
         }
         return applyResourceURL(entry);
+    }
+
+    /**
+     * 读取单个文件元数据并按"所有者或管理员"规则做访问判断.
+     * <p>
+     * 这是资源读取接口的新权限入口:
+     * - 所有者始终允许访问
+     * - ADMIN始终允许访问
+     * - 其它角色访问他人文件时返回403
+     */
+    private FileEntry getAccessibleFileEntry(Integer fileEntryId, Integer userId, String currentRole) {
+        validateUserId(userId);
+        FileEntry entry = getExistingFileEntry(fileEntryId);
+        if (!userId.equals(entry.getUserId()) && !UserRole.isAdmin(currentRole)) {
+            throw new FileAccessDeniedException("无权访问该图片");
+        }
+        return applyResourceURL(entry);
+    }
+
+    /**
+     * 读取文件元数据存在性.
+     * 单独抽出来是为了让"所有者校验"和"管理员可访问校验"共用同一段存在性逻辑.
+     */
+    private FileEntry getExistingFileEntry(Integer fileEntryId) {
+        FileEntry entry = fileEntryMapper.selectById(fileEntryId);
+        if (entry == null) {
+            throw new FileResourceNotFoundException("图片资源不存在");
+        }
+        return entry;
     }
 
     private FileEntry applyResourceURL(FileEntry entry) {
@@ -245,7 +292,7 @@ public class FileService {
 
     /**
      * 从FileEntry还原出磁盘文件的完整路径.
-     * file_entry表里保存的是父目录、UUID文件名和扩展名三段信息, 读取时再拼回去.
+     * file_entry表里保存的是父目录, UUID文件名和扩展名三段信息, 读取时再拼回去.
      */
     private Path resolveStoredPath(FileEntry entry) {
         Path directory = ensureWithinStorageRoot(Paths.get(entry.getDirectory()));
@@ -285,7 +332,7 @@ public class FileService {
     }
 
     /**
-     * 从客户端文件名中提取“纯文件名”.
+     * 从客户端文件名中提取"纯文件名".
      * 这里显式去掉可能出现的Windows/Unix路径前缀, 防止用户把完整本地路径带进后端.
      */
     private String extractClientFilename(String originalFilename) {
@@ -303,7 +350,7 @@ public class FileService {
 
     /**
      * 提取并校验扩展名.
-     * 当前策略是“严格模式”: 缺少扩展名、点号位置异常、或扩展名不在白名单内, 都直接拒绝.
+     * 当前策略是"严格模式": 缺少扩展名, 点号位置异常, 或扩展名不在白名单内, 都直接拒绝.
      */
     private String extractExtname(String filename) {
         int dotIndex = filename.lastIndexOf('.');
@@ -335,7 +382,7 @@ public class FileService {
 
     /**
      * 文件流读取结果.
-     * 把Resource、Content-Type和文件长度打包返回给Controller, 避免Controller再次操作磁盘或做类型判断.
+     * 把Resource, Content-Type和文件长度打包返回给Controller, 避免Controller再次操作磁盘或做类型判断.
      */
     public record StoredResource(Resource resource, MediaType contentType, long size) {
     }

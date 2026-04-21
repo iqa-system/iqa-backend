@@ -34,7 +34,7 @@ public class UserController {
 
     /**
      * 更新用户信息接口.
-     * 支持修改用户名、邮箱和密码, 修改密码时需要提供旧密码.
+     * 支持修改用户名, 邮箱和密码, 修改密码时需要提供旧密码.
      */
     @PostMapping("/update-info")
     public Response<String> updateInfo(

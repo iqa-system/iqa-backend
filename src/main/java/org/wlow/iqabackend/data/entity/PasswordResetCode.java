@@ -10,7 +10,7 @@ import java.time.LocalDateTime;
 
 /**
  * 密码重置验证码实体.
- * 用于保存邮箱验证码的哈希、过期时间和使用状态.
+ * 用于保存邮箱验证码的哈希, 过期时间和使用状态.
  */
 @Data
 @TableName("password_reset_code")

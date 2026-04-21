@@ -44,7 +44,7 @@ public class UserService {
 
     /**
      * 更新用户信息.
-     * 支持修改用户名、邮箱和密码, 修改密码时必须提供旧密码验证.
+     * 支持修改用户名, 邮箱和密码, 修改密码时必须提供旧密码验证.
      */
     public void updateUserInfo(String username, String email, String oldPassword, String newPassword) {
         Integer userId = CurrentUser.getId();

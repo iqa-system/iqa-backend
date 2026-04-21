@@ -24,15 +24,19 @@ public class ResourceController {
     private final FileService fileService;
 
     /**
-     * 读取当前登录用户自己的图片资源.
-     * 这里不直接做权限判断, 而是交给FileService统一校验:
+     * 读取当前登录用户可访问的图片资源.
+     * <p>
+     * 当前访问规则升级为:
      * 1. fileEntry是否存在
-     * 2. 是否属于当前登录用户
-     * 3. 对应磁盘文件是否仍然存在
+     * 2. 若资源属于当前用户, 允许直接访问
+     * 3. 若当前用户角色为ADMIN, 允许访问任意用户图片
+     * 4. 其它情况返回403
+     * 5. 对应磁盘文件是否仍然存在
      */
     @GetMapping("/image/{fileEntryId}")
     public ResponseEntity<Resource> getImage(@PathVariable @Positive(message = "fileEntryId必须大于0") Integer fileEntryId) {
-        FileService.StoredResource storedResource = fileService.loadOwnedImage(fileEntryId, CurrentUser.getId());
+        FileService.StoredResource storedResource =
+                fileService.loadAccessibleImage(fileEntryId, CurrentUser.getId(), CurrentUser.getRole());
         return ResponseEntity.ok()
                 .contentType(storedResource.contentType())
                 .contentLength(storedResource.size())

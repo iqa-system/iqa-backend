@@ -114,6 +114,13 @@ public class GlobalHandler {
     }
 
     @ResponseStatus(HttpStatus.FORBIDDEN)
+    @ExceptionHandler(AdminAccessDeniedException.class)
+    public Response<String> handleAdminAccessDeniedException(AdminAccessDeniedException e) {
+        log.warn("管理员权限不足: {}", e.getMessage());
+        return Response.failure(403, e.getMessage());
+    }
+
+    @ResponseStatus(HttpStatus.FORBIDDEN)
     @ExceptionHandler(FileAccessDeniedException.class)
     public Response<String> handleFileAccessDeniedException(FileAccessDeniedException e) {
         log.warn("文件访问被拒绝: {}", e.getMessage());
@@ -138,6 +145,13 @@ public class GlobalHandler {
     @ExceptionHandler(AssessRecordNotFoundException.class)
     public Response<String> handleAssessRecordNotFoundException(AssessRecordNotFoundException e) {
         log.warn("评估历史记录不存在: {}", e.getMessage());
+        return Response.failure(404, e.getMessage());
+    }
+
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    @ExceptionHandler(UserNotFoundException.class)
+    public Response<String> handleUserNotFoundException(UserNotFoundException e) {
+        log.warn("用户不存在: {}", e.getMessage());
         return Response.failure(404, e.getMessage());
     }
 

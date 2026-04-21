@@ -44,6 +44,8 @@ public class AuthInterceptor implements HandlerInterceptor {
             Claims payload = jwtService.parseAndValidateAccessToken(token);
             String username = payload.get("username", String.class);
             Integer userId = payload.get("userId", Integer.class);
+            // 角色字段继续信任JWT中的声明值, 但只对当前已知的USER/ADMIN做大小写归一.
+            // 对未来新增角色则按原样保留, 避免在鉴权链路中把"专家"等扩展角色丢成USER.
             String role = UserRole.normalize(payload.get("role", String.class));
             CurrentUser.setAll(userId, username, role);
             return true;

@@ -3,11 +3,13 @@ package org.wlow.iqabackend.mapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 import org.wlow.iqabackend.data.entity.PasswordResetCode;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 /**
  * 密码重置验证码表Mapper.
@@ -54,4 +56,19 @@ public interface PasswordResetCodeMapper extends BaseMapper<PasswordResetCode> {
               AND consumed_at IS NULL
             """)
     int consumeActiveCodesByEmail(@Param("email") String email, @Param("consumedAt") LocalDateTime consumedAt);
+
+    /**
+     * 按用户主键集合批量删除密码重置记录.
+     * 管理员删除用户时会复用这个窄接口, 避免把"按user_id批量清理"的语义藏在通用Wrapper里.
+     */
+    @Delete({
+            "<script>",
+            "DELETE FROM password_reset_code",
+            "WHERE user_id IN",
+            "<foreach collection='userIds' item='userId' open='(' separator=',' close=')'>",
+            "#{userId}",
+            "</foreach>",
+            "</script>"
+    })
+    int deleteByUserIdList(@Param("userIds") List<Integer> userIds);
 }
