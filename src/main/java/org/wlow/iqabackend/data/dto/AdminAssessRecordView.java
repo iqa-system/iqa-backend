@@ -4,6 +4,7 @@ import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -57,6 +58,17 @@ public class AdminAssessRecordView {
      * 图像质量分数.
      */
     private Double qualityScore;
+
+    /**
+     * 专家主观评分.
+     * 和模型分使用同一量纲, 方便后台直接对照查看.
+     */
+    private BigDecimal expertScore;
+
+    /**
+     * 专家主观评分最后一次填写或修改时间.
+     */
+    private LocalDateTime expertScoreTime;
 
     /**
      * 场景分类编码.

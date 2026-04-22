@@ -29,6 +29,8 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import java.io.IOException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -53,6 +55,8 @@ import java.util.concurrent.Executors;
 @Slf4j
 public class AssessService {
     private static final ExecutorService BATCH_SSE_EXECUTOR = Executors.newCachedThreadPool();
+    private static final BigDecimal MIN_EXPERT_SCORE = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
+    private static final BigDecimal MAX_EXPERT_SCORE = new BigDecimal("5.00");
     private final RestClient modelApiRestClient;
     private final AssessRecordMapper assessRecordMapper;
     private final FileService fileService;
@@ -61,14 +65,15 @@ public class AssessService {
      * 调用/predict处理单个上传文件.
      * 模型预测成功后, 再把原图保存到本地并写入历史记录.
      */
-    public PredictResult assess(MultipartFile file) {
+    public PredictResult assess(MultipartFile file, String expertScoreRaw) {
         validateFile(file);
+        BigDecimal expertScore = normalizeOptionalSubmissionExpertScore(expertScoreRaw, "expertScore");
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("file", toFilePart(file));
         PredictResult result = executePredict(body);
 
         // 单图评估成功后, 立即落一条历史记录, 保证查询接口可追溯用户操作.
-        saveAssessRecord(file, result);
+        saveAssessRecord(file, result, expertScore);
         return result;
     }
 
@@ -77,7 +82,7 @@ public class AssessService {
      * 事件顺序: start -> progress(模型处理中) -> result/progress(逐图) -> completed.
      * SSE线程不能继续依赖请求生命周期内的MultipartFile, 所以会先做字节快照.
      */
-    public SseEmitter assessBatchStream(List<MultipartFile> files) {
+    public SseEmitter assessBatchStream(List<MultipartFile> files, List<String> expertScoreRaws) {
         if (files == null || files.isEmpty()) {
             throw new IllegalArgumentException("files为空");
         }
@@ -86,12 +91,13 @@ public class AssessService {
             throw new IllegalArgumentException("当前用户未登录");
         }
 
+        List<BigDecimal> expertScores = normalizeBatchExpertScores(expertScoreRaws, files.size());
         List<UploadFileData> uploadFiles = snapshotFiles(files);
         SseEmitter emitter = new SseEmitter(0L);
         emitter.onTimeout(() -> log.warn("批量评估SSE超时, userId={}", userId));
         emitter.onCompletion(() -> log.info("批量评估SSE结束, userId={}", userId));
 
-        CompletableFuture.runAsync(() -> streamBatchAssess(uploadFiles, userId, emitter), BATCH_SSE_EXECUTOR);
+        CompletableFuture.runAsync(() -> streamBatchAssess(uploadFiles, expertScores, userId, emitter), BATCH_SSE_EXECUTOR);
         return emitter;
     }
 
@@ -155,6 +161,30 @@ public class AssessService {
     }
 
     /**
+     * 为当前专家用户补录或修改自己的主观评分.
+     * 只允许EXPERT角色操作, 且只允许修改自己名下的历史记录.
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void updateExpertScore(Integer historyId, String expertScoreRaw) {
+        requireExpertRole();
+        Integer userId = requireCurrentUserId();
+        BigDecimal expertScore = normalizeRequiredExpertScore(expertScoreRaw, "expertScore");
+
+        AssessRecord record = Optional.ofNullable(assessRecordMapper.selectById(historyId))
+                .orElseThrow(() -> new AssessRecordNotFoundException("评估历史记录不存在"));
+        if (!userId.equals(record.getUserId())) {
+            throw new AssessRecordAccessDeniedException("无权修改其他用户的评估历史记录");
+        }
+
+        record.setExpertScore(expertScore);
+        record.setExpertScoreTime(LocalDateTime.now());
+        int updated = assessRecordMapper.updateById(record);
+        if (updated != 1) {
+            throw new IllegalStateException("更新专家主观评分失败");
+        }
+    }
+
+    /**
      * 校验文件存在且非空.
      */
     private void validateFile(MultipartFile file) {
@@ -167,10 +197,10 @@ public class AssessService {
      * 保存单条评估历史记录.
      * 同步接口里使用MultipartFile版本, 这里先把文件读成字节数组, 再复用统一的落盘/落库逻辑.
      */
-    private void saveAssessRecord(MultipartFile file, PredictResult result) {
+    private void saveAssessRecord(MultipartFile file, PredictResult result, BigDecimal expertScore) {
         Integer userId = requireCurrentUserId();
         try {
-            saveAssessRecord(file.getBytes(), safeName(file), userId, result);
+            saveAssessRecord(file.getBytes(), safeName(file), userId, result, expertScore);
         } catch (IOException ex) {
             throw new IllegalArgumentException("读取上传文件失败: " + safeName(file), ex);
         }
@@ -180,8 +210,8 @@ public class AssessService {
      * 保存单条评估历史记录(字节快照版, 适用于异步SSE线程).
      * 异步线程里已经拿到稳定的字节快照, 不会再触碰请求结束后可能失效的MultipartFile对象.
      */
-    private void saveAssessRecord(UploadFileData file, Integer userId, PredictResult result) {
-        saveAssessRecord(file.bytes(), file.filename(), userId, result);
+    private void saveAssessRecord(UploadFileData file, Integer userId, PredictResult result, BigDecimal expertScore) {
+        saveAssessRecord(file.bytes(), file.filename(), userId, result, expertScore);
     }
 
     /**
@@ -193,11 +223,11 @@ public class AssessService {
      * 2. 组装AssessRecord并插入assess_record
      * 3. 如果第2步失败, 反向删除第1步产生的文件和元数据
      */
-    void saveAssessRecord(byte[] fileBytes, String originalFilename, Integer userId, PredictResult result) {
+    void saveAssessRecord(byte[] fileBytes, String originalFilename, Integer userId, PredictResult result, BigDecimal expertScore) {
         FileEntry fileEntry = null;
         try {
             fileEntry = fileService.upload(fileBytes, originalFilename, userId);
-            AssessRecord record = buildRecord(originalFilename, userId, fileEntry, result);
+            AssessRecord record = buildRecord(originalFilename, userId, fileEntry, result, expertScore);
             assessRecordMapper.insert(record);
         } catch (RuntimeException ex) {
             rollbackFileEntry(fileEntry, ex);
@@ -209,7 +239,11 @@ public class AssessService {
      * 构建待入库历史记录.
      * AssessRecord里保存的是前端展示需要的原始文件名, 不是磁盘上的UUID文件名.
      */
-    private AssessRecord buildRecord(String originalFilename, Integer userId, FileEntry fileEntry, PredictResult result) {
+    private AssessRecord buildRecord(String originalFilename,
+                                     Integer userId,
+                                     FileEntry fileEntry,
+                                     PredictResult result,
+                                     BigDecimal expertScore) {
         AssessRecord record = new AssessRecord();
         record.setUserId(userId);
         record.setFilename(originalFilename);
@@ -221,6 +255,10 @@ public class AssessService {
             record.setQualityScore((double) result.getQualityScore());
             record.setScene(result.getScene());
             record.setDistortions(result.getDistortions());
+        }
+        if (expertScore != null) {
+            record.setExpertScore(expertScore);
+            record.setExpertScoreTime(LocalDateTime.now());
         }
 
         return record;
@@ -278,6 +316,16 @@ public class AssessService {
             throw new IllegalArgumentException("当前用户未登录");
         }
         return userId;
+    }
+
+    /**
+     * 要求当前用户具备图像评估专家身份.
+     * 只有EXPERT才允许提交或修改主观评分.
+     */
+    private void requireExpertRole() {
+        if (!org.wlow.iqabackend.data.UserRole.isExpert(CurrentUser.getRole())) {
+            throw new org.wlow.iqabackend.exception.ExpertAccessDeniedException("只有EXPERT角色可以提交或修改主观评分");
+        }
     }
 
     /**
@@ -364,8 +412,12 @@ public class AssessService {
      * 每张图片的结果写回顺序是:
      * 模型结果事件 -> 文件落盘与历史入库 -> 已保存事件.
      */
-    private void streamBatchAssess(List<UploadFileData> files, Integer userId, SseEmitter emitter) {
+    private void streamBatchAssess(List<UploadFileData> files,
+                                   List<BigDecimal> expertScores,
+                                   Integer userId,
+                                   SseEmitter emitter) {
         int total = files.size();
+        List<Map<String, Object>> resultItems = new ArrayList<>(total);
         try {
             Map<String, Object> startData = new HashMap<>();
             startData.put("message", "批量评估任务开始");
@@ -395,6 +447,7 @@ public class AssessService {
             for (int i = 0; i < total; i++) {
                 UploadFileData currentFile = files.get(i);
                 PredictResult predictResult = results.get(i);
+                BigDecimal expertScore = expertScores.get(i);
                 if (predictResult.getFileName() == null || predictResult.getFileName().isBlank()) {
                     predictResult.setFileName(currentFile.filename());
                 }
@@ -406,9 +459,15 @@ public class AssessService {
                 resultData.put("progress", 20 + (int) Math.round(((i + 1) * 40.0) / total));
                 resultData.put("total", total);
                 resultData.put("completed", i + 1);
+                resultData.put("expertScore", expertScore);
                 sendEvent(emitter, "result", resultData);
 
-                saveAssessRecord(currentFile, userId, predictResult);
+                saveAssessRecord(currentFile, userId, predictResult, expertScore);
+
+                Map<String, Object> resultItem = new HashMap<>();
+                resultItem.put("predictResult", predictResult);
+                resultItem.put("expertScore", expertScore);
+                resultItems.add(resultItem);
 
                 Map<String, Object> saveProgressData = new HashMap<>();
                 saveProgressData.put("message", "已保存历史记录");
@@ -425,6 +484,7 @@ public class AssessService {
             completedData.put("total", total);
             completedData.put("completed", total);
             completedData.put("results", results);
+            completedData.put("resultItems", resultItems);
             sendEvent(emitter, "completed", completedData);
             emitter.complete();
         } catch (Exception ex) {
@@ -460,6 +520,83 @@ public class AssessService {
 
     private String safeContentType(MultipartFile file) {
         return Optional.ofNullable(file.getContentType()).orElse(MediaType.APPLICATION_OCTET_STREAM_VALUE);
+    }
+
+    /**
+     * 处理单图评估里的可选主观分字段.
+     * 只有真正提交了非空分值时才触发EXPERT权限校验, 空串视为这次不填写.
+     */
+    private BigDecimal normalizeOptionalSubmissionExpertScore(String rawScore, String fieldName) {
+        if (!hasText(rawScore)) {
+            return null;
+        }
+        requireExpertRole();
+        return normalizeExpertScore(rawScore, fieldName);
+    }
+
+    /**
+     * 处理批量评估里的主观分数组.
+     * 只要提交了expertScores数组, 无论其中是否包含空串, 都要求当前用户必须是EXPERT.
+     * 空串保留为null, 表示该图片这次暂不填写主观分.
+     */
+    private List<BigDecimal> normalizeBatchExpertScores(List<String> rawScores, int fileCount) {
+        if (rawScores == null) {
+            return java.util.Collections.nCopies(fileCount, null);
+        }
+        requireExpertRole();
+        if (rawScores.size() != fileCount) {
+            throw new IllegalArgumentException("expertScores数量必须和files数量一致");
+        }
+
+        List<BigDecimal> normalizedScores = new ArrayList<>(fileCount);
+        for (int i = 0; i < rawScores.size(); i++) {
+            normalizedScores.add(normalizeOptionalExpertScoreValue(rawScores.get(i), "expertScores[" + i + "]"));
+        }
+        return normalizedScores;
+    }
+
+    /**
+     * 处理补录接口里的必填主观分.
+     * PATCH接口不允许传空值, 也不支持把分数清回null.
+     */
+    private BigDecimal normalizeRequiredExpertScore(String rawScore, String fieldName) {
+        if (!hasText(rawScore)) {
+            throw new IllegalArgumentException(fieldName + "不能为空");
+        }
+        return normalizeExpertScore(rawScore, fieldName);
+    }
+
+    /**
+     * 处理可选主观分的空串语义.
+     * 空串代表本次暂不填写主观分, 不是非法值.
+     */
+    private BigDecimal normalizeOptionalExpertScoreValue(String rawScore, String fieldName) {
+        return hasText(rawScore) ? normalizeExpertScore(rawScore, fieldName) : null;
+    }
+
+    /**
+     * 统一校验并标准化主观评分.
+     * 规则固定为0.00-5.00, 最多2位小数, 最终按2位小数落库.
+     */
+    private BigDecimal normalizeExpertScore(String rawScore, String fieldName) {
+        BigDecimal score;
+        try {
+            score = new BigDecimal(rawScore.trim());
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException(fieldName + "必须是0.00到5.00之间的数字");
+        }
+
+        if (score.scale() > 2) {
+            throw new IllegalArgumentException(fieldName + "最多保留2位小数");
+        }
+        if (score.compareTo(MIN_EXPERT_SCORE) < 0 || score.compareTo(MAX_EXPERT_SCORE) > 0) {
+            throw new IllegalArgumentException(fieldName + "必须在0.00到5.00之间");
+        }
+        return score.setScale(2, RoundingMode.UNNECESSARY);
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 
     /**

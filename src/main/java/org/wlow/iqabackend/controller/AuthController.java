@@ -38,10 +38,11 @@ public class AuthController {
             @RequestParam @NotBlank(message = "邮箱不能为空")
             @Email(message = "邮箱格式不正确")
             @Size(max = 255, message = "邮箱长度不能超过255") String email,
+            @RequestParam @NotBlank(message = "角色不能为空") String role,
             @RequestParam @NotBlank(message = "密码不能为空")
             @Size(min = 6, max = 64, message = "密码长度需在6-64之间") String password) {
         try {
-            return authService.signUp(username, password, email);
+            return authService.signUp(username, password, email, role);
         } catch (IllegalArgumentException ex) {
             log.warn("注册失败: {}", ex.getMessage());
             return Response.failure(400, ex.getMessage());

@@ -27,11 +27,11 @@ class UserAccountSupportTest {
     }
 
     @Test
-    void signUpStoresEmailAndDefaultRole() {
+    void signUpStoresEmailAndSelectedUserRole() {
         InMemoryUserStore userStore = new InMemoryUserStore();
         AuthService authService = new AuthService(userStore.mapper(), new JwtService());
 
-        Response<String> response = authService.signUp("alice", "password123", " alice@example.com ");
+        Response<String> response = authService.signUp("alice", "password123", " alice@example.com ", UserRole.USER.name());
 
         User savedUser = userStore.findByUsername("alice");
         assertNotNull(savedUser);
@@ -41,15 +41,50 @@ class UserAccountSupportTest {
     }
 
     @Test
+    void signUpStoresExpertRoleWhenExplicitlySelected() {
+        InMemoryUserStore userStore = new InMemoryUserStore();
+        AuthService authService = new AuthService(userStore.mapper(), new JwtService());
+
+        Response<String> response = authService.signUp("expert", "password123", "expert@example.com", UserRole.EXPERT.name());
+
+        User savedUser = userStore.findByUsername("expert");
+        assertNotNull(savedUser);
+        assertEquals(200, response.getCode());
+        assertEquals(UserRole.EXPERT.name(), savedUser.getRole());
+    }
+
+    @Test
     void signUpRejectsDuplicateEmail() {
         InMemoryUserStore userStore = new InMemoryUserStore();
         userStore.seed(user(1, "alice", "alice@example.com", UserRole.USER.name()));
         AuthService authService = new AuthService(userStore.mapper(), new JwtService());
 
         IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
-                () -> authService.signUp("bob", "password123", "alice@example.com"));
+                () -> authService.signUp("bob", "password123", "alice@example.com", UserRole.USER.name()));
 
         assertEquals("邮箱已存在", exception.getMessage());
+    }
+
+    @Test
+    void signUpRejectsAdminSelfRegistration() {
+        InMemoryUserStore userStore = new InMemoryUserStore();
+        AuthService authService = new AuthService(userStore.mapper(), new JwtService());
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> authService.signUp("admin", "password123", "admin@example.com", UserRole.ADMIN.name()));
+
+        assertEquals("注册仅支持普通用户或评估专家角色", exception.getMessage());
+    }
+
+    @Test
+    void signUpRejectsUnknownSelfRegistrationRole() {
+        InMemoryUserStore userStore = new InMemoryUserStore();
+        AuthService authService = new AuthService(userStore.mapper(), new JwtService());
+
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class,
+                () -> authService.signUp("reviewer", "password123", "reviewer@example.com", "REVIEWER"));
+
+        assertEquals("注册仅支持普通用户或评估专家角色", exception.getMessage());
     }
 
     @Test

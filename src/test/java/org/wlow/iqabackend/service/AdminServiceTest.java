@@ -22,6 +22,7 @@ import org.wlow.iqabackend.mapper.PasswordResetCodeMapper;
 import org.wlow.iqabackend.mapper.UserMapper;
 
 import java.lang.reflect.Proxy;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -163,6 +164,8 @@ class AdminServiceTest {
         assertEquals(1, result.getTotal());
         assertEquals("alice", result.getRecords().get(0).getUsername());
         assertEquals("/resource/image/uuid-a.jpg", result.getRecords().get(0).getImageURL());
+        assertEquals(new BigDecimal("4.30"), result.getRecords().get(0).getExpertScore());
+        assertEquals(LocalDateTime.of(2026, 4, 20, 10, 5), result.getRecords().get(0).getExpertScoreTime());
     }
 
     @Test
@@ -242,6 +245,8 @@ class AdminServiceTest {
         record.setFileEntryId(fileEntryId);
         record.setAssessTime(assessTime);
         record.setQualityScore(4.2D);
+        record.setExpertScore(new BigDecimal("4.30"));
+        record.setExpertScoreTime(assessTime.plusMinutes(5));
         record.setScene(3);
         record.setDistortions(List.of(new DistortionProb(1, 0.9)));
         return record;
@@ -489,6 +494,8 @@ class AdminServiceTest {
             clone.setImageURL(record.getImageURL());
             clone.setAssessTime(record.getAssessTime());
             clone.setQualityScore(record.getQualityScore());
+            clone.setExpertScore(record.getExpertScore());
+            clone.setExpertScoreTime(record.getExpertScoreTime());
             clone.setScene(record.getScene());
             clone.setDistortions(record.getDistortions());
             return clone;

@@ -32,9 +32,10 @@ public class AuthService {
      * 注册新用户.
      * 当前版本注册成功后仅返回成功消息, 不直接发放Token.
      */
-    public Response<String> signUp(String username, String rawPassword, String email) {
+    public Response<String> signUp(String username, String rawPassword, String email, String role) {
         String normalizedUsername = normalizeRequiredValue(username, "用户名不能为空");
         String normalizedEmail = normalizeRequiredValue(email, "邮箱不能为空");
+        String normalizedRole = normalizeSelfRegisterRole(role);
 
         if (existsUsername(normalizedUsername)) {
             throw new IllegalArgumentException("用户名已存在");
@@ -46,7 +47,7 @@ public class AuthService {
         user.setUsername(normalizedUsername);
         user.setPassword(passwordEncoder.encode(rawPassword));
         user.setEmail(normalizedEmail);
-        user.setRole(UserRole.USER.name());
+        user.setRole(normalizedRole);
         user.setRegisterTime(LocalDateTime.now());
         userMapper.insert(user);
         return Response.success(normalizedUsername + "注册成功");
@@ -119,6 +120,19 @@ public class AuthService {
             throw new IllegalArgumentException(emptyMessage);
         }
         return value.trim();
+    }
+
+    /**
+     * 规范化公开注册允许的角色.
+     * 公开注册当前只接受USER和EXPERT.
+     * ADMIN以及其它扩展角色仍然必须走后台或数据库管理链路.
+     */
+    private String normalizeSelfRegisterRole(String role) {
+        String normalizedRole = UserRole.normalize(normalizeRequiredValue(role, "角色不能为空"));
+        if (!UserRole.isSelfRegisterRole(normalizedRole)) {
+            throw new IllegalArgumentException("注册仅支持普通用户或评估专家角色");
+        }
+        return normalizedRole;
     }
 }
 

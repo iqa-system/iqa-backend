@@ -141,6 +141,13 @@ public class GlobalHandler {
         return Response.failure(403, e.getMessage());
     }
 
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    @ExceptionHandler(ExpertAccessDeniedException.class)
+    public Response<String> handleExpertAccessDeniedException(ExpertAccessDeniedException e) {
+        log.warn("专家主观评分权限不足: {}", e.getMessage());
+        return Response.failure(403, e.getMessage());
+    }
+
     @ResponseStatus(HttpStatus.NOT_FOUND)
     @ExceptionHandler(AssessRecordNotFoundException.class)
     public Response<String> handleAssessRecordNotFoundException(AssessRecordNotFoundException e) {

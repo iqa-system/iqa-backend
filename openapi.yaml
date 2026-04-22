@@ -31,6 +31,7 @@ paths:
               required:
                 - username
                 - email
+                - role
                 - password
               properties:
                 username:
@@ -38,6 +39,12 @@ paths:
                 email:
                   type: string
                   format: email
+                role:
+                  type: string
+                  description: 自助注册角色. 仅支持 USER 或 EXPERT.
+                  enum:
+                    - USER
+                    - EXPERT
                 password:
                   type: string
       responses:
@@ -47,11 +54,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponseString"
+        "400":
+          description: 参数非法, 或注册角色不是 USER / EXPERT
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
   /auth/login:
     post:
       tags:
         - auth
       summary: 用户登录
+      description: |
+        登录接口仍只接收 username 和 password.
+        登录页上的普通用户 / 评估专家 / 管理员入口仅是前端页面行为, 角色校验由前端在获取到 user.role 后完成.
       requestBody:
         required: true
         content:
@@ -200,6 +216,13 @@ paths:
                 file:
                   type: string
                   format: binary
+                expertScore:
+                  type: number
+                  format: double
+                  description: |
+                    仅EXPERT角色可提交的可选主观评分.
+                    取值范围为0.00-5.00, 最多2位小数.
+                    留空表示本次不填写主观评分.
       responses:
         "200":
           description: 请求成功
@@ -207,6 +230,18 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponsePredictResult"
+        "400":
+          description: expertScore格式非法, 超范围, 或超过2位小数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 非EXPERT角色提交了expertScore
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
   /assess/batch:
     post:
       tags:
@@ -215,6 +250,7 @@ paths:
       description: |
         返回text/event-stream流式事件.
         事件名称包括start, progress, result, completed, error.
+        当EXPERT提交expertScores时, result事件会额外返回当前图片的expertScore, completed事件会额外返回resultItems.
       parameters:
         - $ref: "#/components/parameters/AuthorizationHeader"
       requestBody:
@@ -231,6 +267,15 @@ paths:
                   items:
                     type: string
                     format: binary
+                expertScores:
+                  type: array
+                  description: |
+                    仅EXPERT角色可提交的可选主观评分数组.
+                    和files按顺序一一对应.
+                    每项取值为0.00-5.00的字符串, 或空串.
+                    空串表示该图片本次不填写主观评分.
+                  items:
+                    type: string
       responses:
         "200":
           description: 请求成功, 持续返回SSE事件直到任务结束
@@ -238,6 +283,18 @@ paths:
             text/event-stream:
               schema:
                 $ref: "#/components/schemas/AssessBatchSseStream"
+        "400":
+          description: expertScores数量和files数量不一致, 或分数字段格式非法
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 非EXPERT角色提交了expertScores
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
   /assess/history:
     get:
       tags:
@@ -324,6 +381,69 @@ paths:
                 $ref: "#/components/schemas/ResponseString"
         "404":
           description: 请求中存在不存在的评估历史记录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+  /assess/history/{id}/expert-score:
+    patch:
+      tags:
+        - assess
+      summary: 补录或修改当前用户历史记录的专家主观评分
+      description: |
+        仅EXPERT角色可调用.
+        只允许修改当前登录用户自己的评估历史记录.
+        每次修改都会刷新expertScoreTime.
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - name: id
+          in: path
+          required: true
+          description: 目标评估历史记录主键.
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - expertScore
+              properties:
+                expertScore:
+                  type: number
+                  format: double
+                  description: 专家主观评分. 取值范围为0.00-5.00, 最多2位小数.
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "400":
+          description: 请求体为空, expertScore缺失, 格式非法, 超范围, 或超过2位小数
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "401":
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 非EXPERT角色调用, 或试图修改其他用户的历史记录
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "404":
+          description: 目标评估历史记录不存在
           content:
             application/json:
               schema:
@@ -959,6 +1079,16 @@ components:
           type: number
           format: double
           description: 图像评估的质量分数.
+        expertScore:
+          type: number
+          format: double
+          nullable: true
+          description: 专家主观评分. 取值范围为0.00-5.00.
+        expertScoreTime:
+          type: string
+          format: date-time
+          nullable: true
+          description: 专家主观评分最后一次填写或修改时间.
         scene:
           type: integer
           format: int32
@@ -1033,6 +1163,14 @@ components:
         qualityScore:
           type: number
           format: double
+        expertScore:
+          type: number
+          format: double
+          nullable: true
+        expertScoreTime:
+          type: string
+          format: date-time
+          nullable: true
         scene:
           type: integer
           format: int32

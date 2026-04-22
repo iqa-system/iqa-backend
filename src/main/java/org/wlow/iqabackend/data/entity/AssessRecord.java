@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.wlow.iqabackend.data.dto.DistortionProb;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -63,6 +64,19 @@ public class AssessRecord {
      * 图像评估的质量分数.
      */
     private Double qualityScore;
+
+    /**
+     * 评估专家填写的主观分数.
+     * 和模型分共用0-5量纲, 使用DECIMAL(3,2)持久化, 方便直接对比.
+     */
+    @TableField("expert_score")
+    private BigDecimal expertScore;
+
+    /**
+     * 专家主观分最后一次填写或修改时间.
+     */
+    @TableField("expert_score_time")
+    private LocalDateTime expertScoreTime;
 
     /**
      * 场景分类编码.

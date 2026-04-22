@@ -35,12 +35,15 @@ INDEX `idx_file_entry_user_time` (`user_id`, `upload_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 图片评估历史记录表
+DROP TABLE IF EXISTS `assess_record`;
 CREATE TABLE `assess_record` (
   `id` INT PRIMARY KEY AUTO_INCREMENT,
   `user_id` INT NOT NULL,
   `filename` VARCHAR(255) NOT NULL,
   `file_entry_id` INT NOT NULL,
   `quality_score` DOUBLE,
+  `expert_score` DECIMAL(3,2) NULL,
+  `expert_score_time` DATETIME NULL,
   `scene` INT,
   `distortions` JSON NOT NULL,
   `assess_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
