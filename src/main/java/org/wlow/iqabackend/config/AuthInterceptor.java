@@ -35,6 +35,10 @@ public class AuthInterceptor implements HandlerInterceptor {
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
             return true;
         }
+        // 图片资源已经切换成静态公开映射, 这里直接放行, 让前端可以通过<img>直接访问.
+        if (request.getRequestURI() != null && request.getRequestURI().startsWith("/resource/image/")) {
+            return true;
+        }
         String token = request.getHeader("Authorization");
         if (token == null || token.isBlank()) {
             writeUnauthorized(response, "未登录或缺少Token");

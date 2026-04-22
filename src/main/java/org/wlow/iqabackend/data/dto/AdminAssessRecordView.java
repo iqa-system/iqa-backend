@@ -44,7 +44,7 @@ public class AdminAssessRecordView {
 
     /**
      * 图片资源访问路径.
-     * 管理员沿用现有/resource/image/{fileEntryId} 接口访问即可.
+     * 新版本统一返回静态资源路径/resource/image/{uuid}.{ext}, 管理员和普通用户使用同一种访问方式.
      */
     private String imageURL;
 

@@ -3,15 +3,9 @@ package org.wlow.iqabackend.service;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.FileSystemResource;
-import org.springframework.core.io.Resource;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
-import org.wlow.iqabackend.data.UserRole;
 import org.wlow.iqabackend.data.entity.FileEntry;
-import org.wlow.iqabackend.exception.FileAccessDeniedException;
-import org.wlow.iqabackend.exception.FileResourceNotFoundException;
 import org.wlow.iqabackend.mapper.FileEntryMapper;
 
 import java.io.IOException;
@@ -36,7 +30,7 @@ import java.util.stream.Collectors;
  * 1. 数据库只保存文件元数据, 真实文件内容存磁盘.
  * 2. 每条评估记录对应一个独立文件, 不做去重或共享.
  * 3. 所有磁盘路径都必须落在storageRoot下, 防止路径穿越.
- * 4. 对外暴露的是虚拟资源地址/resource/image/{id}, 不暴露真实绝对路径.
+ * 4. 对外暴露的是公开静态资源地址/resource/image/{uuid}.{ext}, 不再走按用户鉴权的业务读取接口.
  */
 @Service
 @Slf4j
@@ -90,13 +84,14 @@ public class FileService {
         // 磁盘文件名统一改成UUID, 规避同名覆盖, 特殊字符和原始文件名泄露问题.
         String uuidFilename = UUID.randomUUID().toString();
 
-        // 图片按用户分目录存储, 目录形如 <root>/image/{userId}.
-        Path userDirectory = resolveUserDirectory(userId);
-        Path storedPath = resolveStoredPath(userDirectory, uuidFilename, extname);
+        // 新版本改成扁平目录存储, 目录固定为 <root>/image.
+        // 这样resource handler可以直接把/resource/image/** 映射到该目录, 前端能直接通过静态URL访问图片.
+        Path imageDirectory = resolveImageDirectory();
+        Path storedPath = resolveStoredPath(imageDirectory, uuidFilename, extname);
 
         try {
             // 目录不存在时自动创建; 已存在时不会报错.
-            Files.createDirectories(userDirectory);
+            Files.createDirectories(imageDirectory);
             Files.write(storedPath, bytes);
         } catch (IOException ex) {
             throw new IllegalStateException("保存图片文件失败", ex);
@@ -106,7 +101,7 @@ public class FileService {
         entry.setUserId(userId);
         entry.setFilename(uuidFilename);
         entry.setExtname(extname);
-        entry.setDirectory(userDirectory.toString());
+        entry.setDirectory(imageDirectory.toString());
         entry.setSize((long) bytes.length);
         entry.setUploadTime(LocalDateTime.now());
 
@@ -121,11 +116,10 @@ public class FileService {
     }
 
     /**
-     * 按当前用户批量查询文件元数据, 并回填资源URL.
-     * 这个方法主要给AssessService.history使用, 避免对每条历史记录单独查库造成N+1问题.
+     * 按主键批量查询文件元数据, 并回填资源URL.
+     * 这里不再按用户过滤, 因为图片URL已经改成公开静态资源, 历史列表只需要拿到file_entry对应的静态地址即可.
      */
-    public Map<Integer, FileEntry> mapOwnedFileEntriesByIds(Integer userId, Collection<Integer> fileEntryIds) {
-        validateUserId(userId);
+    public Map<Integer, FileEntry> mapFileEntriesByIds(Collection<Integer> fileEntryIds) {
         if (fileEntryIds == null || fileEntryIds.isEmpty()) {
             return Map.of();
         }
@@ -139,7 +133,6 @@ public class FileService {
         }
 
         QueryWrapper<FileEntry> wrapper = new QueryWrapper<FileEntry>()
-                .eq("user_id", userId)
                 .in("id", ids);
         return fileEntryMapper.selectList(wrapper).stream()
                 .map(this::applyResourceURL)
@@ -147,52 +140,15 @@ public class FileService {
     }
 
     /**
-     * 加载当前用户拥有的图片资源.
-     * 只要fileEntry存在但不属于当前用户, 就抛出403异常;
-     * 文件记录存在但磁盘文件已经缺失时, 则视为404.
-     */
-    public StoredResource loadOwnedImage(Integer fileEntryId, Integer userId) {
-        FileEntry entry = getOwnedFileEntry(fileEntryId, userId);
-        return loadStoredResource(entry);
-    }
-
-    /**
-     * 加载当前用户"可访问"的图片资源.
-     * <p>
-     * 与loadOwnedImage的区别在于:
-     * 1. 普通用户仍然只能访问自己的图片
-     * 2. ADMIN角色可以访问任意用户图片
-     * 3. ResourceController统一走这个入口, 避免Controller里散落角色分支
-     */
-    public StoredResource loadAccessibleImage(Integer fileEntryId, Integer userId, String currentRole) {
-        FileEntry entry = getAccessibleFileEntry(fileEntryId, userId, currentRole);
-        return loadStoredResource(entry);
-    }
-
-    /**
-     * 基于文件元数据真正读取磁盘文件.
-     * 这样权限判断和磁盘读取逻辑可以分层复用, 既方便普通用户读取, 也方便管理员读取.
-     */
-    private StoredResource loadStoredResource(FileEntry entry) {
-        Path storedPath = resolveStoredPath(entry);
-        if (!Files.isRegularFile(storedPath)) {
-            throw new FileResourceNotFoundException("图片资源不存在");
-        }
-
-        try {
-            long size = Files.size(storedPath);
-            return new StoredResource(new FileSystemResource(storedPath), resolveMediaType(entry.getExtname()), size);
-        } catch (IOException ex) {
-            throw new IllegalStateException("读取图片文件失败", ex);
-        }
-    }
-
-    /**
      * 删除当前用户拥有的文件及元数据.
      * 当前阶段没有暴露删除Controller, 但先把服务能力准备好, 方便后续做"删历史同时删文件".
      */
     public void deleteOwnedFile(Integer fileEntryId, Integer userId) {
-        FileEntry entry = getOwnedFileEntry(fileEntryId, userId);
+        validateUserId(userId);
+        FileEntry entry = getExistingFileEntry(fileEntryId);
+        if (!userId.equals(entry.getUserId())) {
+            throw new IllegalArgumentException("无权删除该图片");
+        }
         deleteFileEntry(entry);
     }
 
@@ -219,67 +175,35 @@ public class FileService {
 
     /**
      * 构建资源相对路径.
-     * 前端拿到这个相对路径后, 需要在已登录上下文中携带Authorization访问.
+     * 静态资源模式下, 图片URL直接由UUID文件名和扩展名组成, 前端可以直接赋给<img>标签使用.
      */
-    public String buildResourceURL(Integer fileEntryId) {
-        return IMAGE_RESOURCE_PREFIX + fileEntryId;
-    }
-
-    /**
-     * 读取单个文件元数据并做归属校验.
-     * 不在这里直接返回文件流, 是为了把"权限判断"和"物理文件读取"拆开, 各自职责更清晰.
-     */
-    private FileEntry getOwnedFileEntry(Integer fileEntryId, Integer userId) {
-        FileEntry entry = getExistingFileEntry(fileEntryId);
-        if (!userId.equals(entry.getUserId())) {
-            throw new FileAccessDeniedException("无权访问该图片");
-        }
-        return applyResourceURL(entry);
-    }
-
-    /**
-     * 读取单个文件元数据并按"所有者或管理员"规则做访问判断.
-     * <p>
-     * 这是资源读取接口的新权限入口:
-     * - 所有者始终允许访问
-     * - ADMIN始终允许访问
-     * - 其它角色访问他人文件时返回403
-     */
-    private FileEntry getAccessibleFileEntry(Integer fileEntryId, Integer userId, String currentRole) {
-        validateUserId(userId);
-        FileEntry entry = getExistingFileEntry(fileEntryId);
-        if (!userId.equals(entry.getUserId()) && !UserRole.isAdmin(currentRole)) {
-            throw new FileAccessDeniedException("无权访问该图片");
-        }
-        return applyResourceURL(entry);
+    public String buildResourceURL(String filename, String extname) {
+        return IMAGE_RESOURCE_PREFIX + filename + "." + extname;
     }
 
     /**
      * 读取文件元数据存在性.
-     * 单独抽出来是为了让"所有者校验"和"管理员可访问校验"共用同一段存在性逻辑.
+     * 删除链路仍然需要根据fileEntryId找到元数据, 然后再还原磁盘路径.
      */
     private FileEntry getExistingFileEntry(Integer fileEntryId) {
-        FileEntry entry = fileEntryMapper.selectById(fileEntryId);
-        if (entry == null) {
-            throw new FileResourceNotFoundException("图片资源不存在");
-        }
-        return entry;
+        return Optional.ofNullable(fileEntryMapper.selectById(fileEntryId))
+                .orElseThrow(() -> new IllegalArgumentException("图片资源不存在"));
     }
 
     private FileEntry applyResourceURL(FileEntry entry) {
-        if (entry != null && entry.getId() != null) {
+        if (entry != null && entry.getFilename() != null && entry.getExtname() != null) {
             // resourceURL不入库, 每次查询时按统一规则动态拼接.
-            entry.setResourceURL(buildResourceURL(entry.getId()));
+            entry.setResourceURL(buildResourceURL(entry.getFilename(), entry.getExtname()));
         }
         return entry;
     }
 
     /**
-     * 解析用户目录.
-     * 所有用户图片都必须位于 storageRoot/image/{userId} 下.
+     * 解析统一图片目录.
+     * 静态资源方案下, 所有新图片都落在 storageRoot/image 下, 不再按用户分子目录.
      */
-    private Path resolveUserDirectory(Integer userId) {
-        return ensureWithinStorageRoot(storageRoot.resolve("image").resolve(String.valueOf(userId)));
+    public Path resolveImageDirectory() {
+        return ensureWithinStorageRoot(storageRoot.resolve("image"));
     }
 
     /**
@@ -364,26 +288,4 @@ public class FileService {
         return extname;
     }
 
-    /**
-     * 根据扩展名推断HTTP响应的Content-Type.
-     * 这里只影响前端怎么渲染文件, 不参与权限判断和磁盘定位.
-     */
-    private MediaType resolveMediaType(String extname) {
-        return switch (extname) {
-            case "jpg", "jpeg" -> MediaType.IMAGE_JPEG;
-            case "png" -> MediaType.IMAGE_PNG;
-            case "gif" -> MediaType.IMAGE_GIF;
-            case "bmp" -> MediaType.parseMediaType("image/bmp");
-            case "webp" -> MediaType.parseMediaType("image/webp");
-            case "tif", "tiff" -> MediaType.parseMediaType("image/tiff");
-            default -> MediaType.APPLICATION_OCTET_STREAM;
-        };
-    }
-
-    /**
-     * 文件流读取结果.
-     * 把Resource, Content-Type和文件长度打包返回给Controller, 避免Controller再次操作磁盘或做类型判断.
-     */
-    public record StoredResource(Resource resource, MediaType contentType, long size) {
-    }
 }

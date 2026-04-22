@@ -234,6 +234,7 @@ public class AdminService {
     /**
      * 批量把历史记录转换成管理员视图.
      * 这里额外补齐用户名和图片访问URL, 让前端拿到分页结果后就能直接展示.
+     * 图片URL已经改成静态资源路径, 因此这里需要批量查file_entry拿到uuid和扩展名.
      */
     private List<AdminAssessRecordView> fillAdminHistoryViews(List<AssessRecord> records) {
         if (records == null || records.isEmpty()) {
@@ -241,6 +242,7 @@ public class AdminService {
         }
 
         Map<Integer, String> usernameMap = buildUsernameMap(records);
+        Map<Integer, FileEntry> fileEntryMap = buildFileEntryMap(records);
         return records.stream()
                 .map(record -> new AdminAssessRecordView(
                         record.getId(),
@@ -248,7 +250,9 @@ public class AdminService {
                         usernameMap.get(record.getUserId()),
                         record.getFilename(),
                         record.getFileEntryId(),
-                        record.getFileEntryId() == null ? null : fileService.buildResourceURL(record.getFileEntryId()),
+                        Optional.ofNullable(fileEntryMap.get(record.getFileEntryId()))
+                                .map(FileEntry::getResourceURL)
+                                .orElse(null),
                         record.getAssessTime(),
                         record.getQualityScore(),
                         record.getScene(),
@@ -275,6 +279,22 @@ public class AdminService {
                 .orElse(List.of())
                 .stream()
                 .collect(Collectors.toMap(User::getId, User::getUsername, (left, right) -> left, LinkedHashMap::new));
+    }
+
+    /**
+     * 按历史记录里的fileEntryId批量查询文件元数据.
+     * 管理员历史列表也需要返回新的静态imageURL, 所以这里统一把file_entry转换成resourceURL映射.
+     */
+    private Map<Integer, FileEntry> buildFileEntryMap(List<AssessRecord> records) {
+        List<Integer> fileEntryIds = records.stream()
+                .map(AssessRecord::getFileEntryId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (fileEntryIds.isEmpty()) {
+            return Map.of();
+        }
+        return fileService.mapFileEntriesByIds(fileEntryIds);
     }
 
     /**

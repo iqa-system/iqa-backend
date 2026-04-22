@@ -100,11 +100,11 @@ class AdminServiceTest {
         assessStore.seed(assessRecord(101, 2, "alice-noise.jpg", 301, LocalDateTime.of(2026, 4, 20, 10, 0)));
         passwordResetCodeStore.seed(passwordResetCode(401, 2, "alice@example.com"));
 
-        Path userDirectory = tempDir.resolve("image").resolve("2");
-        Files.createDirectories(userDirectory);
-        Path storedPath = userDirectory.resolve("uuid-a.jpg");
+        Path imageDirectory = tempDir.resolve("image");
+        Files.createDirectories(imageDirectory);
+        Path storedPath = imageDirectory.resolve("uuid-a.jpg");
         Files.writeString(storedPath, "image-bytes");
-        fileEntryStore.seed(fileEntry(301, 2, "uuid-a", "jpg", userDirectory.toString(), 11L));
+        fileEntryStore.seed(fileEntry(301, 2, "uuid-a", "jpg", imageDirectory.toString(), 11L));
 
         AdminService adminService = buildAdminService(userStore, assessStore, passwordResetCodeStore, fileEntryStore);
         CurrentUser.setAll(1, "admin", UserRole.ADMIN.name());
@@ -148,6 +148,8 @@ class AdminServiceTest {
         userStore.seed(user(3, "bob", "bob@example.com", UserRole.USER.name()));
         assessStore.seed(assessRecord(101, 2, "alice-noise.jpg", 301, LocalDateTime.of(2026, 4, 20, 10, 0)));
         assessStore.seed(assessRecord(102, 3, "bob-blur.jpg", 302, LocalDateTime.of(2026, 4, 21, 11, 0)));
+        fileEntryStore.seed(fileEntry(301, 2, "uuid-a", "jpg", tempDir.resolve("image").toString(), 11L));
+        fileEntryStore.seed(fileEntry(302, 3, "uuid-b", "png", tempDir.resolve("image").toString(), 12L));
 
         AdminService adminService = buildAdminService(userStore, assessStore, passwordResetCodeStore, fileEntryStore);
         CurrentUser.setAll(1, "admin", UserRole.ADMIN.name());
@@ -160,7 +162,7 @@ class AdminServiceTest {
 
         assertEquals(1, result.getTotal());
         assertEquals("alice", result.getRecords().get(0).getUsername());
-        assertEquals("/resource/image/301", result.getRecords().get(0).getImageURL());
+        assertEquals("/resource/image/uuid-a.jpg", result.getRecords().get(0).getImageURL());
     }
 
     @Test
@@ -173,11 +175,11 @@ class AdminServiceTest {
         userStore.seed(user(1, "admin", "admin@example.com", UserRole.ADMIN.name()));
         assessStore.seed(assessRecord(101, 2, "alice-noise.jpg", 301, LocalDateTime.of(2026, 4, 20, 10, 0)));
 
-        Path userDirectory = tempDir.resolve("image").resolve("2");
-        Files.createDirectories(userDirectory);
-        Path storedPath = userDirectory.resolve("uuid-a.jpg");
+        Path imageDirectory = tempDir.resolve("image");
+        Files.createDirectories(imageDirectory);
+        Path storedPath = imageDirectory.resolve("uuid-a.jpg");
         Files.writeString(storedPath, "image-bytes");
-        fileEntryStore.seed(fileEntry(301, 2, "uuid-a", "jpg", userDirectory.toString(), 11L));
+        fileEntryStore.seed(fileEntry(301, 2, "uuid-a", "jpg", imageDirectory.toString(), 11L));
 
         AdminService adminService = buildAdminService(userStore, assessStore, passwordResetCodeStore, fileEntryStore);
         CurrentUser.setAll(1, "admin", UserRole.ADMIN.name());

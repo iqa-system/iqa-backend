@@ -645,22 +645,19 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponseString"
-  /resource/image/{fileEntryId}:
+  /resource/image/{filename}:
     get:
       tags:
         - resource
-      summary: 获取可访问的图片资源
-      description: 根据fileEntryId读取图片文件. 文件所有者或ADMIN角色均可访问.
+      summary: 获取公开图片资源
+      description: 根据静态文件名直接读取图片文件. 文件名格式为{uuid}.{ext}, 可直接用于<img>标签访问.
       parameters:
-        - $ref: "#/components/parameters/AuthorizationHeader"
-        - name: fileEntryId
+        - name: filename
           in: path
           required: true
-          description: 文件元数据主键.
+          description: 静态图片文件名, 例如550e8400-e29b-41d4-a716-446655440000.jpg.
           schema:
-            type: integer
-            format: int32
-            minimum: 1
+            type: string
       responses:
         "200":
           description: 请求成功, 返回图片文件流
@@ -669,18 +666,6 @@ paths:
               schema:
                 type: string
                 format: binary
-        "401":
-          description: 未登录或Token无效
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResponseString"
-        "403":
-          description: 无权访问该图片资源
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ResponseString"
         "404":
           description: 图片资源不存在
           content:
@@ -966,7 +951,7 @@ components:
           description: 对应文件元数据主键.
         imageURL:
           type: string
-          description: 图片资源相对路径, 可直接GET访问.
+          description: 图片资源相对路径, 形如/resource/image/{uuid}.{ext}, 可直接GET访问.
         assessTime:
           type: string
           format: date-time
@@ -1041,7 +1026,7 @@ components:
           format: int32
         imageURL:
           type: string
-          description: 图片资源相对路径, 管理员可直接GET访问.
+          description: 图片资源相对路径, 形如/resource/image/{uuid}.{ext}, 管理员和普通用户都可直接GET访问.
         assessTime:
           type: string
           format: date-time

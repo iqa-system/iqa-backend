@@ -10,6 +10,7 @@ import org.wlow.iqabackend.data.UserRole;
 import org.wlow.iqabackend.service.JwtService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AuthInterceptorRoleTest {
@@ -37,5 +38,21 @@ class AuthInterceptorRoleTest {
         assertEquals(7, CurrentUser.getId());
         assertEquals("alice", CurrentUser.getUsername());
         assertEquals(UserRole.ADMIN.name(), CurrentUser.getRole());
+    }
+
+    @Test
+    void preHandleAllowsStaticImageRequestWithoutToken() throws Exception {
+        JwtService jwtService = new JwtService();
+        ReflectionTestUtils.setField(jwtService, "secretKey", "3q4-jb!@-$%@(%vgUYT&:s-dbehj@AWDnwadamf");
+        ReflectionTestUtils.setField(jwtService, "accessTokenExpiration", 3600L);
+
+        AuthInterceptor authInterceptor = new AuthInterceptor(jwtService);
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/resource/image/sample-uuid.jpg");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        boolean allowed = authInterceptor.preHandle(request, response, new Object());
+
+        assertTrue(allowed);
+        assertNull(CurrentUser.getId());
     }
 }

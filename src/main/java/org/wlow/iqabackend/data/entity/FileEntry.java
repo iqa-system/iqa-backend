@@ -64,7 +64,7 @@ public class FileEntry {
 
     /**
      * 资源访问相对路径.
-     * 查询时动态拼接, 不存储到数据库.
+     * 查询时动态拼接为/resource/image/{uuid}.{ext}, 不存储到数据库.
      */
     @TableField(exist = false)
     private String resourceURL;

@@ -97,7 +97,7 @@ public class AssessService {
 
     /**
      * 查询当前登录用户的评估历史记录.
-     * 查询主表后, 会额外批量查一次file_entry并把imageURL动态回填进去.
+     * 查询主表后, 会额外批量查一次file_entry并把新的静态imageURL动态回填进去.
      */
     public Page<AssessRecord> history(int page, int pageSize) {
         Integer userId = requireCurrentUserId();
@@ -107,7 +107,7 @@ public class AssessService {
                 .orderByDesc("assess_time");
 
         Page<AssessRecord> result = assessRecordMapper.selectPage(pageRequest, wrapper);
-        fillHistoryImageURLs(userId, result.getRecords());
+        fillHistoryImageURLs(result.getRecords());
         return result;
     }
 
@@ -245,8 +245,9 @@ public class AssessService {
     /**
      * 批量回填历史记录里的imageURL.
      * 这里按fileEntryId去重后一次查库, 避免records.size()条历史触发同等数量的文件元数据查询.
+     * 图片已经改成公开静态资源, 因此这里不再按当前用户过滤file_entry, 只按主键批量查元数据并拼URL.
      */
-    private void fillHistoryImageURLs(Integer userId, List<AssessRecord> records) {
+    private void fillHistoryImageURLs(List<AssessRecord> records) {
         if (records == null || records.isEmpty()) {
             return;
         }
@@ -258,7 +259,7 @@ public class AssessService {
         if (fileEntryIds.isEmpty()) {
             return;
         }
-        Map<Integer, FileEntry> fileEntryMap = fileService.mapOwnedFileEntriesByIds(userId, fileEntryIds);
+        Map<Integer, FileEntry> fileEntryMap = fileService.mapFileEntriesByIds(fileEntryIds);
         for (AssessRecord record : records) {
             FileEntry entry = fileEntryMap.get(record.getFileEntryId());
             if (entry != null) {
