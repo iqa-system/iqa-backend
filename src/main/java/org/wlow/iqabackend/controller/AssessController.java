@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.wlow.iqabackend.data.dto.ModelsResponse;
 import org.wlow.iqabackend.data.dto.PredictResult;
 import org.wlow.iqabackend.data.dto.Response;
 import org.wlow.iqabackend.data.entity.AssessRecord;
@@ -36,12 +37,22 @@ public class AssessController {
     private final AssessService assessService;
 
     /**
+     * 获取当前Python模型服务支持的模型列表.
+     * Java后端不缓存也不硬编码模型信息, 直接代理Python /models结果.
+     */
+    @GetMapping("/models")
+    public Response<ModelsResponse> models() {
+        return Response.success(assessService.listModels());
+    }
+
+    /**
      * 单图像质量评估接口.
      */
     @PostMapping(value = "", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public Response<PredictResult> assess(@RequestPart("file") @NotNull MultipartFile file,
-                                          @RequestParam(value = "expertScore", required = false) String expertScore) {
-        PredictResult result = assessService.assess(file, expertScore);
+                                          @RequestParam(value = "expertScore", required = false) String expertScore,
+                                          @RequestParam(value = "modelId", required = false) String modelId) {
+        PredictResult result = assessService.assess(file, expertScore, modelId);
         return Response.success(result);
     }
 
@@ -52,8 +63,9 @@ public class AssessController {
     @PostMapping(value = "/batch", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter assessBatch(
             @RequestPart("files") @NotEmpty List<MultipartFile> files,
+            @RequestParam(value = "modelId", required = false) String modelId,
             HttpServletRequest request) {
-        return assessService.assessBatchStream(files, extractExpertScores(request));
+        return assessService.assessBatchStream(files, extractExpertScores(request), modelId);
     }
 
     /**
@@ -105,4 +117,3 @@ public class AssessController {
         return rawValues == null ? null : List.of(rawValues);
     }
 }
-

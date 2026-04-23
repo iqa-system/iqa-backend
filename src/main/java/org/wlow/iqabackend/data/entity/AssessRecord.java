@@ -66,6 +66,13 @@ public class AssessRecord {
     private Double qualityScore;
 
     /**
+     * 实际执行评估的模型ID.
+     * 历史记录始终保存Python最终返回的model_id, 便于后续区分不同模型的结果来源.
+     */
+    @TableField("model_id")
+    private String modelId;
+
+    /**
      * 评估专家填写的主观分数.
      * 和模型分共用0-5量纲, 使用DECIMAL(3,2)持久化, 方便直接对比.
      */
@@ -86,6 +93,7 @@ public class AssessRecord {
     /**
      * 失真类型概率列表.
      * 使用JSON列存储, 查询时自动反序列化为对象列表.
+     * 非LIQE模型可能不返回失真信息, 因此字段允许为null.
      */
     @TableField(typeHandler = JacksonTypeHandler.class)
     private List<DistortionProb> distortions;

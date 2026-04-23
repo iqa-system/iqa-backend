@@ -255,6 +255,7 @@ public class AdminService {
                                 .orElse(null),
                         record.getAssessTime(),
                         record.getQualityScore(),
+                        record.getModelId(),
                         record.getExpertScore(),
                         record.getExpertScoreTime(),
                         record.getScene(),

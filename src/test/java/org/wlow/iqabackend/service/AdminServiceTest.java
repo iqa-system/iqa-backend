@@ -164,6 +164,7 @@ class AdminServiceTest {
         assertEquals(1, result.getTotal());
         assertEquals("alice", result.getRecords().get(0).getUsername());
         assertEquals("/resource/image/uuid-a.jpg", result.getRecords().get(0).getImageURL());
+        assertEquals("liqe_default", result.getRecords().get(0).getModelId());
         assertEquals(new BigDecimal("4.30"), result.getRecords().get(0).getExpertScore());
         assertEquals(LocalDateTime.of(2026, 4, 20, 10, 5), result.getRecords().get(0).getExpertScoreTime());
     }
@@ -245,6 +246,7 @@ class AdminServiceTest {
         record.setFileEntryId(fileEntryId);
         record.setAssessTime(assessTime);
         record.setQualityScore(4.2D);
+        record.setModelId("liqe_default");
         record.setExpertScore(new BigDecimal("4.30"));
         record.setExpertScoreTime(assessTime.plusMinutes(5));
         record.setScene(3);
@@ -494,6 +496,7 @@ class AdminServiceTest {
             clone.setImageURL(record.getImageURL());
             clone.setAssessTime(record.getAssessTime());
             clone.setQualityScore(record.getQualityScore());
+            clone.setModelId(record.getModelId());
             clone.setExpertScore(record.getExpertScore());
             clone.setExpertScoreTime(record.getExpertScoreTime());
             clone.setScene(record.getScene());

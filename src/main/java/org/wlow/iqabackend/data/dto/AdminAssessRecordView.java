@@ -60,6 +60,11 @@ public class AdminAssessRecordView {
     private Double qualityScore;
 
     /**
+     * 实际执行评估的模型ID.
+     */
+    private String modelId;
+
+    /**
      * 专家主观评分.
      * 和模型分使用同一量纲, 方便后台直接对照查看.
      */

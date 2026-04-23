@@ -42,11 +42,13 @@ CREATE TABLE `assess_record` (
   `filename` VARCHAR(255) NOT NULL,
   `file_entry_id` INT NOT NULL,
   `quality_score` DOUBLE,
+  `model_id` VARCHAR(100) NULL,
   `expert_score` DECIMAL(3,2) NULL,
   `expert_score_time` DATETIME NULL,
   `scene` INT,
-  `distortions` JSON NOT NULL,
+  `distortions` JSON NULL,
   `assess_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX `idx_assess_record_user_time` (`user_id`, `assess_time`),
-  INDEX `idx_assess_record_file_entry_id` (`file_entry_id`)
+  INDEX `idx_assess_record_file_entry_id` (`file_entry_id`),
+  INDEX `idx_assess_record_model_id` (`model_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

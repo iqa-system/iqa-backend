@@ -161,7 +161,9 @@ class AssessServiceExpertScoreTest {
         server.createContext("/predict", exchange -> writeJson(exchange, """
                 {
                   "file_name": "sample.jpg",
+                  "model_id": "liqe_default",
                   "quality_score": 4.3,
+                  "extra_outputs": {},
                   "scene": 2,
                   "distortions": [
                     { "index": 1, "prob": 0.91 }
@@ -173,7 +175,9 @@ class AssessServiceExpertScoreTest {
                   "results": [
                     {
                       "file_name": "a.jpg",
+                      "model_id": "liqe_default",
                       "quality_score": 4.1,
+                      "extra_outputs": {},
                       "scene": 1,
                       "distortions": [
                         { "index": 1, "prob": 0.80 }
@@ -181,7 +185,9 @@ class AssessServiceExpertScoreTest {
                     },
                     {
                       "file_name": "b.jpg",
+                      "model_id": "liqe_default",
                       "quality_score": 3.8,
+                      "extra_outputs": {},
                       "scene": 2,
                       "distortions": [
                         { "index": 2, "prob": 0.70 }
@@ -332,6 +338,7 @@ class AssessServiceExpertScoreTest {
             clone.setImageURL(record.getImageURL());
             clone.setAssessTime(record.getAssessTime());
             clone.setQualityScore(record.getQualityScore());
+            clone.setModelId(record.getModelId());
             clone.setExpertScore(record.getExpertScore());
             clone.setExpertScoreTime(record.getExpertScoreTime());
             clone.setScene(record.getScene());

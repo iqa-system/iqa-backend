@@ -17,6 +17,35 @@ tags:
   - name: resource
     description: 图片资源访问接口.
 paths:
+  /assess/models:
+    get:
+      tags:
+        - assess
+      summary: 获取可用模型列表
+      description: |
+        代理Python模型服务的/models接口.
+        Java后端不维护本地模型注册表, 默认模型和可用模型列表都以Python返回为准.
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseModelsResponse"
+        "401":
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "502":
+          description: Python模型服务不可用或返回服务端异常
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
   /auth/sign-up:
     post:
       tags:
@@ -216,6 +245,11 @@ paths:
                 file:
                   type: string
                   format: binary
+                modelId:
+                  type: string
+                  description: |
+                    可选模型ID.
+                    留空时由Python模型服务自动选择默认模型.
                 expertScore:
                   type: number
                   format: double
@@ -231,7 +265,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ResponsePredictResult"
         "400":
-          description: expertScore格式非法, 超范围, 或超过2位小数
+          description: expertScore格式非法, 超范围, 超过2位小数, 或modelId无效
           content:
             application/json:
               schema:
@@ -267,6 +301,12 @@ paths:
                   items:
                     type: string
                     format: binary
+                modelId:
+                  type: string
+                  description: |
+                    可选模型ID.
+                    整批图片会共用同一个模型.
+                    留空时由Python模型服务自动选择默认模型.
                 expertScores:
                   type: array
                   description: |
@@ -284,7 +324,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/AssessBatchSseStream"
         "400":
-          description: expertScores数量和files数量不一致, 或分数字段格式非法
+          description: expertScores数量和files数量不一致, 分数字段格式非法, 或modelId无效
           content:
             application/json:
               schema:
@@ -888,6 +928,19 @@ components:
       required:
         - code
         - message
+    ResponseModelsResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/ModelsResponse"
+      required:
+        - code
+        - message
     ResponsePredictResult:
       type: object
       properties:
@@ -919,8 +972,8 @@ components:
       description: |
         SSE消息体. 事件通过event字段区分, data为JSON对象.
         start/progress: message, progress, total, completed.
-        result: message, progress, total, completed, currentFileName, predictResult.
-        completed: message, progress, total, completed, results.
+        result: message, progress, total, completed, currentFileName, predictResult, expertScore.
+        completed: message, progress, total, completed, results, resultItems.
         error: message.
       example: |
         event: start
@@ -930,10 +983,10 @@ components:
         data: {"message":"模型批量评估中","progress":20,"total":3}
 
         event: result
-        data: {"message":"已完成单张评估","currentFileName":"a.jpg","progress":33,"total":3,"completed":1,"predictResult":{"file_name":"a.jpg","quality_score":0.92,"scene":1,"distortions":[{"index":3,"prob":0.4213}]}}
+        data: {"message":"已完成单张评估","currentFileName":"a.jpg","progress":33,"total":3,"completed":1,"expertScore":4.25,"predictResult":{"file_name":"a.jpg","model_id":"liqe_default","quality_score":0.92,"extra_outputs":{},"scene":1,"distortions":[{"index":3,"prob":0.4213}]}}
 
         event: completed
-        data: {"message":"批量评估完成","progress":100,"total":3,"completed":3,"results":[]}
+        data: {"message":"批量评估完成","progress":100,"total":3,"completed":3,"results":[],"resultItems":[]}
     ResponsePageAssessRecord:
       type: object
       properties:
@@ -1016,22 +1069,32 @@ components:
     PredictResult:
       type: object
       required:
+        - model_id
         - quality_score
-        - scene
-        - distortions
+        - extra_outputs
       properties:
         file_name:
           type: string
+          nullable: true
+        model_id:
+          type: string
+          description: 实际执行推理的模型ID.
         quality_score:
           type: number
           format: float
+        extra_outputs:
+          type: object
+          description: 模型通用扩展输出. 当前大多数模型通常返回空对象.
+          additionalProperties: true
         scene:
           type: integer
           format: int32
-          description: 场景分类编码.
+          nullable: true
+          description: 场景分类编码. 仅支持该能力的模型会返回值.
         distortions:
           type: array
-          description: 失真类型概率列表. Python服务保证至少返回一项.
+          nullable: true
+          description: 失真类型概率列表. 非LIQE类模型可为null.
           items:
             $ref: "#/components/schemas/DistortionProb"
     DistortionProb:
@@ -1054,6 +1117,45 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/PredictResult"
+    ModelsResponse:
+      type: object
+      required:
+        - default_model_id
+        - models
+      properties:
+        default_model_id:
+          type: string
+          description: 默认模型ID. 当评估接口未传modelId时会使用它.
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelInfo"
+    ModelInfo:
+      type: object
+      required:
+        - model_id
+        - display_name
+        - description
+        - capabilities
+        - is_default
+      properties:
+        model_id:
+          type: string
+          description: 模型唯一ID.
+        display_name:
+          type: string
+          description: 用于前端展示的模型名称.
+        description:
+          type: string
+          description: 模型特性说明.
+        capabilities:
+          type: array
+          description: 当前模型可返回的能力字段列表.
+          items:
+            type: string
+        is_default:
+          type: boolean
+          description: 是否为当前默认模型.
     AssessRecord:
       type: object
       properties:
@@ -1079,6 +1181,10 @@ components:
           type: number
           format: double
           description: 图像评估的质量分数.
+        modelId:
+          type: string
+          nullable: true
+          description: 实际执行评估的模型ID. 旧历史记录可能为空.
         expertScore:
           type: number
           format: double
@@ -1092,10 +1198,12 @@ components:
         scene:
           type: integer
           format: int32
-          description: 场景分类编码.
+          nullable: true
+          description: 场景分类编码. 不支持该能力的模型可为null.
         distortions:
           type: array
-          description: 失真类型概率列表. 后端从JSON列反序列化后返回对象数组.
+          nullable: true
+          description: 失真类型概率列表. 非LIQE类模型可为null.
           items:
             $ref: "#/components/schemas/DistortionProb"
     PageAssessRecord:
@@ -1163,6 +1271,9 @@ components:
         qualityScore:
           type: number
           format: double
+        modelId:
+          type: string
+          nullable: true
         expertScore:
           type: number
           format: double
@@ -1174,8 +1285,10 @@ components:
         scene:
           type: integer
           format: int32
+          nullable: true
         distortions:
           type: array
+          nullable: true
           items:
             $ref: "#/components/schemas/DistortionProb"
     PageAdminAssessRecord:

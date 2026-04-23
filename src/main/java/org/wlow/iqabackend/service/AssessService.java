@@ -1,5 +1,7 @@
 package org.wlow.iqabackend.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ByteArrayResource;
@@ -13,10 +15,12 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import org.wlow.iqabackend.data.CurrentUser;
 import org.wlow.iqabackend.data.dto.BatchPredictResponse;
+import org.wlow.iqabackend.data.dto.ModelsResponse;
 import org.wlow.iqabackend.data.dto.PredictResult;
 import org.wlow.iqabackend.data.entity.AssessRecord;
 import org.wlow.iqabackend.data.entity.FileEntry;
@@ -41,6 +45,7 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.Supplier;
 
 /**
  * 将Spring Boot请求桥接到Python模型API.
@@ -55,6 +60,7 @@ import java.util.concurrent.Executors;
 @Slf4j
 public class AssessService {
     private static final ExecutorService BATCH_SSE_EXECUTOR = Executors.newCachedThreadPool();
+    private static final ObjectMapper MODEL_API_ERROR_OBJECT_MAPPER = new ObjectMapper();
     private static final BigDecimal MIN_EXPERT_SCORE = BigDecimal.ZERO.setScale(2, RoundingMode.UNNECESSARY);
     private static final BigDecimal MAX_EXPERT_SCORE = new BigDecimal("5.00");
     private final RestClient modelApiRestClient;
@@ -62,14 +68,37 @@ public class AssessService {
     private final FileService fileService;
 
     /**
+     * 查询当前Python模型服务支持的模型列表.
+     * Java后端只做透明代理, 不在本地维护独立模型注册表.
+     */
+    public ModelsResponse listModels() {
+        return executeModelApiCall(() -> modelApiRestClient.get()
+                .uri("/models")
+                .retrieve()
+                .body(ModelsResponse.class));
+    }
+
+    /**
      * 调用/predict处理单个上传文件.
      * 模型预测成功后, 再把原图保存到本地并写入历史记录.
      */
     public PredictResult assess(MultipartFile file, String expertScoreRaw) {
+        return assess(file, expertScoreRaw, null);
+    }
+
+    /**
+     * 调用/predict处理单个上传文件.
+     * 如果调用方传了modelId, 这里会把它透传给Python的model_id字段.
+     */
+    public PredictResult assess(MultipartFile file, String expertScoreRaw, String modelIdRaw) {
         validateFile(file);
         BigDecimal expertScore = normalizeOptionalSubmissionExpertScore(expertScoreRaw, "expertScore");
+        String modelId = normalizeOptionalModelId(modelIdRaw);
         MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
         body.add("file", toFilePart(file));
+        if (modelId != null) {
+            body.add("model_id", modelId);
+        }
         PredictResult result = executePredict(body);
 
         // 单图评估成功后, 立即落一条历史记录, 保证查询接口可追溯用户操作.
@@ -83,6 +112,14 @@ public class AssessService {
      * SSE线程不能继续依赖请求生命周期内的MultipartFile, 所以会先做字节快照.
      */
     public SseEmitter assessBatchStream(List<MultipartFile> files, List<String> expertScoreRaws) {
+        return assessBatchStream(files, expertScoreRaws, null);
+    }
+
+    /**
+     * 批量评估SSE流式接口.
+     * 整批图片共用一个modelId. Java只做非空标准化, 不维护本地模型白名单.
+     */
+    public SseEmitter assessBatchStream(List<MultipartFile> files, List<String> expertScoreRaws, String modelIdRaw) {
         if (files == null || files.isEmpty()) {
             throw new IllegalArgumentException("files为空");
         }
@@ -91,13 +128,14 @@ public class AssessService {
             throw new IllegalArgumentException("当前用户未登录");
         }
 
+        String modelId = normalizeOptionalModelId(modelIdRaw);
         List<BigDecimal> expertScores = normalizeBatchExpertScores(expertScoreRaws, files.size());
         List<UploadFileData> uploadFiles = snapshotFiles(files);
         SseEmitter emitter = new SseEmitter(0L);
         emitter.onTimeout(() -> log.warn("批量评估SSE超时, userId={}", userId));
         emitter.onCompletion(() -> log.info("批量评估SSE结束, userId={}", userId));
 
-        CompletableFuture.runAsync(() -> streamBatchAssess(uploadFiles, expertScores, userId, emitter), BATCH_SSE_EXECUTOR);
+        CompletableFuture.runAsync(() -> streamBatchAssess(uploadFiles, expertScores, modelId, userId, emitter), BATCH_SSE_EXECUTOR);
         return emitter;
     }
 
@@ -253,6 +291,7 @@ public class AssessService {
 
         if (result != null) {
             record.setQualityScore((double) result.getQualityScore());
+            record.setModelId(result.getModelId());
             record.setScene(result.getScene());
             record.setDistortions(result.getDistortions());
         }
@@ -370,24 +409,75 @@ public class AssessService {
      * 执行单次预测请求并映射响应.
      */
     private PredictResult executePredict(MultiValueMap<String, Object> body) {
-        return modelApiRestClient.post()
+        return executeModelApiCall(() -> modelApiRestClient.post()
                 .uri("/predict")
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(body)
                 .retrieve()
-                .body(PredictResult.class);
+                .body(PredictResult.class));
     }
 
     /**
      * 执行批量预测请求并映射响应.
      */
     private BatchPredictResponse executeBatchPredict(MultiValueMap<String, Object> body) {
-        return modelApiRestClient.post()
+        return executeModelApiCall(() -> modelApiRestClient.post()
                 .uri("/predict/batch")
                 .contentType(MediaType.MULTIPART_FORM_DATA)
                 .body(body)
                 .retrieve()
-                .body(BatchPredictResponse.class);
+                .body(BatchPredictResponse.class));
+    }
+
+    /**
+     * 统一执行远程模型服务调用.
+     * 约定如下:
+     * 1. Python返回400时, 转为本地400并尽量透传detail.
+     * 2. Python返回5xx或网络层异常时, 继续按502处理.
+     */
+    private <T> T executeModelApiCall(Supplier<T> remoteCall) {
+        try {
+            return remoteCall.get();
+        } catch (RestClientResponseException ex) {
+            throw mapModelApiResponseException(ex);
+        }
+    }
+
+    /**
+     * 把远程HTTP异常转换成当前后端的异常语义.
+     * Python 400通常代表未知模型或请求体非法, 应当反馈给调用方作为参数错误.
+     */
+    private RuntimeException mapModelApiResponseException(RestClientResponseException ex) {
+        int statusCode = ex.getStatusCode().value();
+        String remoteDetail = extractModelApiErrorDetail(ex);
+        if (statusCode == 400) {
+            return new IllegalArgumentException(remoteDetail);
+        }
+        return new RestClientException("远程模型服务调用失败: " + remoteDetail, ex);
+    }
+
+    /**
+     * 尽量从Python错误响应体中提取detail字段.
+     * 如果响应体不是标准JSON, 就回退到状态文本或原始响应体.
+     */
+    private String extractModelApiErrorDetail(RestClientResponseException ex) {
+        String body = ex.getResponseBodyAsString();
+        if (hasText(body)) {
+            try {
+                JsonNode root = MODEL_API_ERROR_OBJECT_MAPPER.readTree(body);
+                JsonNode detailNode = root.get("detail");
+                if (detailNode != null && !detailNode.isNull() && hasText(detailNode.asText())) {
+                    return detailNode.asText();
+                }
+            } catch (Exception ignore) {
+                // 如果错误响应不是JSON, 就继续回退到原始文本.
+            }
+            return body.trim();
+        }
+        if (hasText(ex.getStatusText())) {
+            return ex.getStatusText();
+        }
+        return "HTTP " + ex.getStatusCode().value();
     }
 
     /**
@@ -414,6 +504,7 @@ public class AssessService {
      */
     private void streamBatchAssess(List<UploadFileData> files,
                                    List<BigDecimal> expertScores,
+                                   String modelId,
                                    Integer userId,
                                    SseEmitter emitter) {
         int total = files.size();
@@ -428,6 +519,9 @@ public class AssessService {
             MultiValueMap<String, Object> body = new LinkedMultiValueMap<>();
             for (UploadFileData file : files) {
                 body.add("files", toFilePart(file));
+            }
+            if (modelId != null) {
+                body.add("model_id", modelId);
             }
 
             Map<String, Object> modelProgressData = new HashMap<>();
@@ -572,6 +666,14 @@ public class AssessService {
      */
     private BigDecimal normalizeOptionalExpertScoreValue(String rawScore, String fieldName) {
         return hasText(rawScore) ? normalizeExpertScore(rawScore, fieldName) : null;
+    }
+
+    /**
+     * 标准化可选modelId参数.
+     * 空串和全空白字符串都视为未传, 避免把无效空值透传给Python.
+     */
+    private String normalizeOptionalModelId(String rawModelId) {
+        return hasText(rawModelId) ? rawModelId.trim() : null;
     }
 
     /**
