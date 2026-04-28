@@ -62,7 +62,11 @@ class AssessServiceModelSelectionTest {
         ModelInfo firstModel = response.getModels().get(0);
         assertEquals("liqe_default", firstModel.getModelId());
         assertTrue(firstModel.getCapabilities().contains("scene"));
+        assertEquals(0D, firstModel.getScoreRange().getMinScore());
+        assertEquals(100D, firstModel.getScoreRange().getMaxScore());
         assertEquals("TOPIQ-NR KonIQ", response.getModels().get(1).getDisplayName());
+        assertEquals(0D, response.getModels().get(1).getScoreRange().getMinScore());
+        assertEquals(1D, response.getModels().get(1).getScoreRange().getMaxScore());
     }
 
     @Test
@@ -70,11 +74,13 @@ class AssessServiceModelSelectionTest {
         AssessModelFixture fixture = buildFixture();
         CurrentUser.setAll(21, "alice", "USER");
 
-        fixture.assessService().assess(mockFile("sample.jpg"), null, null);
+        var result = fixture.assessService().assess(mockFile("sample.jpg"), null, null);
 
         AssessRecord stored = fixture.assessStore().records().get(0);
         assertEquals("liqe_default", stored.getModelId());
         assertEquals(4.3D, stored.getQualityScore(), 0.000001D);
+        assertEquals(0D, result.getScoreRange().getMinScore());
+        assertEquals(100D, result.getScoreRange().getMaxScore());
         assertTrue(fixture.lastPredictRequestBody().get().contains("name=\"file\""));
         assertTrue(!fixture.lastPredictRequestBody().get().contains("name=\"model_id\""));
 
@@ -88,11 +94,13 @@ class AssessServiceModelSelectionTest {
         AssessModelFixture fixture = buildFixture();
         CurrentUser.setAll(22, "alice", "USER");
 
-        fixture.assessService().assess(mockFile("topiq.jpg"), null, "topiq_nr_koniq");
+        var result = fixture.assessService().assess(mockFile("topiq.jpg"), null, "topiq_nr_koniq");
 
         String requestBody = fixture.lastPredictRequestBody().get();
         assertTrue(requestBody.contains("name=\"model_id\""));
         assertTrue(requestBody.contains("topiq_nr_koniq"));
+        assertEquals(0D, result.getScoreRange().getMinScore());
+        assertEquals(1D, result.getScoreRange().getMaxScore());
 
         AssessRecord stored = fixture.assessStore().records().get(0);
         assertEquals("topiq_nr_koniq", stored.getModelId());
@@ -149,6 +157,10 @@ class AssessServiceModelSelectionTest {
                       "display_name": "LIQE Default",
                       "description": "LIQE default model",
                       "capabilities": ["quality_score", "scene", "distortions"],
+                      "score_range": {
+                        "min_score": 0,
+                        "max_score": 100
+                      },
                       "is_default": true
                     },
                     {
@@ -156,6 +168,10 @@ class AssessServiceModelSelectionTest {
                       "display_name": "TOPIQ-NR KonIQ",
                       "description": "TOPIQ model",
                       "capabilities": ["quality_score"],
+                      "score_range": {
+                        "min_score": 0,
+                        "max_score": 1
+                      },
                       "is_default": false
                     }
                   ]
@@ -190,6 +206,10 @@ class AssessServiceModelSelectionTest {
                       "file_name": "topiq.jpg",
                       "model_id": "topiq_nr_koniq",
                       "quality_score": 3.7,
+                      "score_range": {
+                        "min_score": 0,
+                        "max_score": 1
+                      },
                       "extra_outputs": {},
                       "scene": null,
                       "distortions": null
@@ -202,6 +222,10 @@ class AssessServiceModelSelectionTest {
                   "file_name": "sample.jpg",
                   "model_id": "liqe_default",
                   "quality_score": 4.3,
+                  "score_range": {
+                    "min_score": 0,
+                    "max_score": 100
+                  },
                   "extra_outputs": {},
                   "scene": 2,
                   "distortions": [
@@ -221,6 +245,10 @@ class AssessServiceModelSelectionTest {
                       "file_name": "a.jpg",
                       "model_id": "topiq_nr_koniq",
                       "quality_score": 3.8,
+                      "score_range": {
+                        "min_score": 0,
+                        "max_score": 1
+                      },
                       "extra_outputs": {},
                       "scene": null,
                       "distortions": null
@@ -229,6 +257,10 @@ class AssessServiceModelSelectionTest {
                       "file_name": "b.jpg",
                       "model_id": "topiq_nr_koniq",
                       "quality_score": 3.5,
+                      "score_range": {
+                        "min_score": 0,
+                        "max_score": 1
+                      },
                       "extra_outputs": {},
                       "scene": null,
                       "distortions": null

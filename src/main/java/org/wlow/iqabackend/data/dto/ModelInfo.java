@@ -40,6 +40,13 @@ public class ModelInfo {
     private List<String> capabilities;
 
     /**
+     * 模型原始分数范围.
+     * 前端会基于该范围把不同模型的原始分映射到统一的0-5量纲.
+     */
+    @JsonProperty("score_range")
+    private ScoreRange scoreRange;
+
+    /**
      * 当前模型是否为默认模型.
      */
     @JsonProperty("is_default")

@@ -24,7 +24,7 @@ paths:
       summary: 获取可用模型列表
       description: |
         代理Python模型服务的/models接口.
-        Java后端不维护本地模型注册表, 默认模型和可用模型列表都以Python返回为准.
+        Java后端不维护本地模型注册表, 默认模型, 可用模型列表和评分范围都以Python返回为准.
       parameters:
         - $ref: "#/components/parameters/AuthorizationHeader"
       responses:
@@ -972,7 +972,7 @@ components:
       description: |
         SSE消息体. 事件通过event字段区分, data为JSON对象.
         start/progress: message, progress, total, completed.
-        result: message, progress, total, completed, currentFileName, predictResult, expertScore.
+        result: message, progress, total, completed, currentFileName, predictResult, expertScore. predictResult中会带score_range.
         completed: message, progress, total, completed, results, resultItems.
         error: message.
       example: |
@@ -983,7 +983,7 @@ components:
         data: {"message":"模型批量评估中","progress":20,"total":3}
 
         event: result
-        data: {"message":"已完成单张评估","currentFileName":"a.jpg","progress":33,"total":3,"completed":1,"expertScore":4.25,"predictResult":{"file_name":"a.jpg","model_id":"liqe_default","quality_score":0.92,"extra_outputs":{},"scene":1,"distortions":[{"index":3,"prob":0.4213}]}}
+        data: {"message":"已完成单张评估","currentFileName":"a.jpg","progress":33,"total":3,"completed":1,"expertScore":4.25,"predictResult":{"file_name":"a.jpg","model_id":"liqe_default","quality_score":92.00,"score_range":{"min_score":0,"max_score":100},"extra_outputs":{},"scene":1,"distortions":[{"index":3,"prob":0.4213}]}}
 
         event: completed
         data: {"message":"批量评估完成","progress":100,"total":3,"completed":3,"results":[],"resultItems":[]}
@@ -1071,6 +1071,7 @@ components:
       required:
         - model_id
         - quality_score
+        - score_range
         - extra_outputs
       properties:
         file_name:
@@ -1082,6 +1083,8 @@ components:
         quality_score:
           type: number
           format: float
+        score_range:
+          $ref: "#/components/schemas/ScoreRange"
         extra_outputs:
           type: object
           description: 模型通用扩展输出. 当前大多数模型通常返回空对象.
@@ -1137,6 +1140,7 @@ components:
         - display_name
         - description
         - capabilities
+        - score_range
         - is_default
       properties:
         model_id:
@@ -1153,9 +1157,25 @@ components:
           description: 当前模型可返回的能力字段列表.
           items:
             type: string
+        score_range:
+          $ref: "#/components/schemas/ScoreRange"
         is_default:
           type: boolean
           description: 是否为当前默认模型.
+    ScoreRange:
+      type: object
+      required:
+        - min_score
+        - max_score
+      properties:
+        min_score:
+          type: number
+          format: double
+          description: 模型原始分数下界.
+        max_score:
+          type: number
+          format: double
+          description: 模型原始分数上界.
     AssessRecord:
       type: object
       properties:
@@ -1184,7 +1204,7 @@ components:
         modelId:
           type: string
           nullable: true
-          description: 实际执行评估的模型ID. 旧历史记录可能为空.
+          description: 实际执行评估的模型ID. 前端应结合/assess/models返回的score_range解释原始质量分数. 旧历史记录可能为空.
         expertScore:
           type: number
           format: double
@@ -1274,6 +1294,7 @@ components:
         modelId:
           type: string
           nullable: true
+          description: 实际执行评估的模型ID. 前端应结合/assess/models返回的score_range解释原始质量分数.
         expertScore:
           type: number
           format: double

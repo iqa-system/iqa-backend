@@ -41,6 +41,13 @@ public class PredictResult {
     private float qualityScore;
 
     /**
+     * 该模型原始分数的取值区间.
+     * Java后端即时透传给前端, 方便前端计算统一的归一化分.
+     */
+    @JsonProperty("score_range")
+    private ScoreRange scoreRange;
+
+    /**
      * 模型通用扩展输出.
      * 当前不同模型可能返回空对象, 也可能补充少量附加指标.
      * Java后端先按通用Map透传, 本次不持久化到历史记录.
