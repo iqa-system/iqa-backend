@@ -3,6 +3,7 @@ package org.wlow.iqabackend.exception;
 import jakarta.validation.ConstraintViolationException;
 import lombok.extern.slf4j.Slf4j;
 import org.mybatis.spring.MyBatisSystemException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -14,6 +15,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
+import org.springframework.web.multipart.MultipartException;
 import org.wlow.iqabackend.data.dto.Response;
 
 import java.util.Arrays;
@@ -24,6 +27,12 @@ import java.util.Arrays;
 @Slf4j
 @RestControllerAdvice
 public class GlobalHandler {
+    @Value("${spring.servlet.multipart.max-file-size}")
+    private String maxFileSize;
+
+    @Value("${spring.servlet.multipart.max-request-size}")
+    private String maxRequestSize;
+
     /**
      * 处理请求参数缺少/未传递的异常 <br>
      * {@link ResponseStatus}可以指定响应的HTTP状态码. 不加时默认为200
@@ -102,6 +111,31 @@ public class GlobalHandler {
     public Response<String> handleHttpMessageNotReadableException(HttpMessageNotReadableException e){
         log.warn("请求体格式不正确: {}", e.getMessage());
         return Response.failure(400, "请求体格式不正确");
+    }
+
+    /**
+     * 处理multipart上传超过大小限制的异常.
+     * 这里返回413而不是让连接被直接重置, 前端就可以读取JSON响应并给出明确提示.
+     */
+    @ResponseStatus(HttpStatus.CONTENT_TOO_LARGE)
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public Response<String> handleMaxUploadSizeExceededException(MaxUploadSizeExceededException e) {
+        log.warn("上传文件超过大小限制: {}", e.getMessage());
+        return Response.failure(
+                413,
+                "上传文件过大, 单个文件最大限制为" + maxFileSize + ", 单次请求最大限制为" + maxRequestSize
+        );
+    }
+
+    /**
+     * 处理通用multipart解析异常.
+     * 文件过大通常会走MaxUploadSizeExceededException, 其它multipart格式错误则在这里返回400.
+     */
+    @ResponseStatus(HttpStatus.BAD_REQUEST)
+    @ExceptionHandler(MultipartException.class)
+    public Response<String> handleMultipartException(MultipartException e) {
+        log.warn("文件上传请求解析失败: {}", e.getMessage());
+        return Response.failure(400, "文件上传请求解析失败, 请检查文件是否有效或请求格式是否正确");
     }
 
     /**

@@ -8,8 +8,8 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
   servlet:
     multipart:
-      max-file-size: 10MB
-      max-request-size: 20MB
+      max-file-size: 100MB
+      max-request-size: 150MB
     encoding:
       # 设置响应编码格式强制为UTF-8, 否则过滤器/拦截器中通过打印流直接响应中文时前端会收到乱码
       charset: UTF-8
@@ -32,6 +32,10 @@ spring:
 
 server:
   port: 8080
+#  tomcat:
+    # 当multipart请求超过Spring配置的大小限制时, Tomcat默认可能在吞掉剩余请求体前直接关闭连接.
+    # 设为-1表示不限制吞咽大小, 让Spring有机会返回413 JSON响应, 避免前端只看到ERR_CONNECTION_RESET.
+#    max-swallow-size: -1
 
 # Spring Boot Actuator运维端点配置.
 # 生产环境只暴露健康检查和基础信息端点, 避免env/beans/heapdump等敏感端点被外部访问.
