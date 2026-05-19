@@ -15,9 +15,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.wlow.iqabackend.data.dto.AdminAssessRecordView;
+import org.wlow.iqabackend.data.dto.AdminStatisticsResponse;
 import org.wlow.iqabackend.data.dto.Response;
 import org.wlow.iqabackend.data.dto.UserInfo;
 import org.wlow.iqabackend.service.AdminService;
+import org.wlow.iqabackend.service.AdminStatisticsService;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -37,6 +39,19 @@ import java.util.Map;
 @Validated
 public class AdminController {
     private final AdminService adminService;
+    private final AdminStatisticsService adminStatisticsService;
+
+    /**
+     * 管理员统计看板数据.
+     * startTime/endTime都为空时表示统计全部历史记录.
+     */
+    @GetMapping("/statistics")
+    public Response<AdminStatisticsResponse> statistics(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime endTime) {
+        AdminStatisticsResponse result = adminStatisticsService.statistics(startTime, endTime);
+        return Response.success(result);
+    }
 
     /**
      * 管理员分页查询用户列表.
