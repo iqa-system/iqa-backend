@@ -532,6 +532,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ResponseString"
+  /admin/statistics:
+    get:
+      tags:
+        - admin
+      summary: 管理员统计看板数据
+      description: |
+        统计全站评估次数、模型使用情况、质量区间分布、活跃用户以及专家评分和模型评分差异.
+        startTime和endTime都为空时统计全部时间段.
+        质量区间和专家差异分析使用后端根据Python模型目录score_range归一化后的0-5分数.
+        当模型目录不可用或部分历史模型缺少评分范围时, 接口仍返回基础统计, 并在warnings中说明降级原因.
+      parameters:
+        - $ref: "#/components/parameters/AuthorizationHeader"
+        - name: startTime
+          in: query
+          required: false
+          description: 统计开始时间(ISO-8601), 可留空.
+          schema:
+            type: string
+            format: date-time
+        - name: endTime
+          in: query
+          required: false
+          description: 统计结束时间(ISO-8601), 可留空.
+          schema:
+            type: string
+            format: date-time
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseAdminStatisticsResponse"
+        "400":
+          description: 时间范围参数非法, 例如startTime晚于endTime
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "401":
+          description: 未登录或Token无效
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
+        "403":
+          description: 无权访问管理员接口
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResponseString"
   /admin/users:
     get:
       tags:
@@ -1083,6 +1134,19 @@ components:
       required:
         - code
         - message
+    ResponseAdminStatisticsResponse:
+      type: object
+      properties:
+        code:
+          type: integer
+          format: int32
+        message:
+          type: string
+        data:
+          $ref: "#/components/schemas/AdminStatisticsResponse"
+      required:
+        - code
+        - message
     ResponseInteger:
       type: object
       properties:
@@ -1389,6 +1453,197 @@ components:
         pages:
           type: integer
           format: int64
+    AdminStatisticsResponse:
+      type: object
+      description: 管理员统计看板数据. 质量区间与专家差异分析中的模型分数已统一归一化到0-5.
+      properties:
+        summary:
+          $ref: "#/components/schemas/AdminStatisticsSummary"
+        dailyAssessments:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminDailyAssessment"
+        modelUsage:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminModelUsage"
+        qualityBuckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminQualityBucket"
+        activeUsers:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminActiveUser"
+        expertComparison:
+          $ref: "#/components/schemas/AdminExpertComparison"
+        warnings:
+          type: array
+          description: 统计降级提示. 例如模型目录不可用或部分历史模型缺少评分范围.
+          items:
+            type: string
+    AdminStatisticsSummary:
+      type: object
+      properties:
+        totalAssessments:
+          type: integer
+          format: int64
+          description: 时间范围内总评估次数.
+        activeUserCount:
+          type: integer
+          format: int64
+          description: 时间范围内参与评估的用户数.
+        expertSampleCount:
+          type: integer
+          format: int64
+          description: 时间范围内已填写专家评分的记录数.
+        modelCount:
+          type: integer
+          format: int64
+          description: 时间范围内使用过的模型数量.
+    AdminDailyAssessment:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+          description: 统计日期.
+        count:
+          type: integer
+          format: int64
+          description: 当日评估次数.
+    AdminModelUsage:
+      type: object
+      properties:
+        modelId:
+          type: string
+          description: 模型ID. 历史记录缺少模型ID时可能为UNKNOWN.
+        modelName:
+          type: string
+          description: 模型展示名.
+        count:
+          type: integer
+          format: int64
+          description: 使用次数.
+        ratio:
+          type: number
+          format: double
+          description: 使用占比, 范围0-1.
+    AdminQualityBucket:
+      type: object
+      properties:
+        bucket:
+          type: string
+          description: 归一化质量分区, 例如0-1或4-5.
+        minScore:
+          type: number
+          format: double
+        maxScore:
+          type: number
+          format: double
+        count:
+          type: integer
+          format: int64
+        ratio:
+          type: number
+          format: double
+          description: 分区占比, 范围0-1.
+    AdminActiveUser:
+      type: object
+      properties:
+        userId:
+          type: integer
+          format: int32
+        username:
+          type: string
+        count:
+          type: integer
+          format: int64
+          description: 评估次数.
+    AdminExpertComparison:
+      type: object
+      properties:
+        sampleCount:
+          type: integer
+          format: int64
+          description: 参与专家差异分析的有效样本数.
+        skippedCount:
+          type: integer
+          format: int64
+          nullable: true
+          description: 因缺少模型评分范围或质量分数而跳过的专家评分记录数.
+        meanAbsoluteError:
+          type: number
+          format: double
+          nullable: true
+          description: 平均绝对误差.
+        meanSignedError:
+          type: number
+          format: double
+          nullable: true
+          description: 平均有符号误差. 正数表示模型归一化分数高于专家评分.
+        rootMeanSquareError:
+          type: number
+          format: double
+          nullable: true
+          description: 均方根误差.
+        pearsonCorrelation:
+          type: number
+          format: double
+          nullable: true
+          description: Pearson相关系数. 样本不足或方差为0时返回null.
+        deviationBuckets:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminDeviationBucket"
+        modelConsistency:
+          type: array
+          items:
+            $ref: "#/components/schemas/AdminModelExpertConsistency"
+    AdminDeviationBucket:
+      type: object
+      properties:
+        bucket:
+          type: string
+          description: 偏差区间. diff = 模型归一化分数 - 专家评分.
+        minDiff:
+          type: number
+          format: double
+        maxDiff:
+          type: number
+          format: double
+        count:
+          type: integer
+          format: int64
+        ratio:
+          type: number
+          format: double
+    AdminModelExpertConsistency:
+      type: object
+      properties:
+        modelId:
+          type: string
+        modelName:
+          type: string
+        sampleCount:
+          type: integer
+          format: int64
+        meanAbsoluteError:
+          type: number
+          format: double
+          nullable: true
+        meanSignedError:
+          type: number
+          format: double
+          nullable: true
+        rootMeanSquareError:
+          type: number
+          format: double
+          nullable: true
+        pearsonCorrelation:
+          type: number
+          format: double
+          nullable: true
     UserInfo:
       type: object
       properties:

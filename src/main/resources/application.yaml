@@ -32,10 +32,12 @@ spring:
 
 server:
   port: 8080
-#  tomcat:
+  tomcat:
     # 当multipart请求超过Spring配置的大小限制时, Tomcat默认可能在吞掉剩余请求体前直接关闭连接.
     # 设为-1表示不限制吞咽大小, 让Spring有机会返回413 JSON响应, 避免前端只看到ERR_CONNECTION_RESET.
-#    max-swallow-size: -1
+    max-swallow-size: -1
+    # multipart文件数量限制, 默认是10, 对于批量图像评估来说太小了
+    max-part-count: 100
 
 # Spring Boot Actuator运维端点配置.
 # 生产环境只暴露健康检查和基础信息端点, 避免env/beans/heapdump等敏感端点被外部访问.
