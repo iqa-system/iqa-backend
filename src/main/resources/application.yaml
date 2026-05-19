@@ -3,13 +3,17 @@ spring:
     name: iqa-backend
   datasource:
     url: jdbc:mysql://localhost:3306/iqa_system?useUnicode=true&characterEncoding=utf-8&useSSL=false&jdbcCompliantTruncation=false
-    username: root
+    username: iqa
     password: 123456
     driver-class-name: com.mysql.cj.jdbc.Driver
   servlet:
     multipart:
       max-file-size: 10MB
       max-request-size: 20MB
+    encoding:
+      # 设置响应编码格式强制为UTF-8, 否则过滤器/拦截器中通过打印流直接响应中文时前端会收到乱码
+      charset: UTF-8
+      force: true
   # 邮件配置, 使用了山大云邮账号
   mail:
     host: smtphz.qiye.163.com
@@ -28,11 +32,18 @@ spring:
 
 server:
   port: 8080
-  servlet:
-    # 设置响应编码格式强制为UTF-8, 否则过滤器/拦截器中通过打印流直接响应中文时前端会收到乱码
-    encoding:
-      charset: UTF-8
-      force: true
+
+# Spring Boot Actuator运维端点配置.
+# 生产环境只暴露健康检查和基础信息端点, 避免env/beans/heapdump等敏感端点被外部访问.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
 model-api:
   base-url: http://localhost:8000
 

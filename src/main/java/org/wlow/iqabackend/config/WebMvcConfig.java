@@ -29,7 +29,13 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/**")
-                .excludePathPatterns("/auth/**", "/error", "/resource/image/**");
+                .excludePathPatterns(
+                        "/auth/**",
+                        "/error",
+                        "/resource/image/**",
+                        "/actuator/health",
+                        "/actuator/info"
+                );
 
         // 管理员拦截器必须注册在JWT拦截器之后, 这样它才能读取到AuthInterceptor写入的CurrentUser.role.
         registry.addInterceptor(adminInterceptor)

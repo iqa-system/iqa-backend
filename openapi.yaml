@@ -16,7 +16,51 @@ tags:
     description: 管理员用户管理与全站评估历史管理接口.
   - name: resource
     description: 图片资源访问接口.
+  - name: system
+    description: 系统健康检查与基础运维信息接口.
 paths:
+  /actuator/health:
+    get:
+      tags:
+        - system
+      summary: Spring Boot Actuator健康检查
+      description: |
+        公开健康检查端点, 用于Nginx, 部署脚本或服务器运维探测Java后端是否可用.
+        该接口不需要Authorization请求头. 当前配置不暴露详细组件信息.
+      responses:
+        "200":
+          description: 服务健康
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActuatorHealthResponse"
+              example:
+                status: UP
+        "503":
+          description: 服务不可用或依赖组件异常
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActuatorHealthResponse"
+              example:
+                status: DOWN
+  /actuator/info:
+    get:
+      tags:
+        - system
+      summary: Spring Boot Actuator基础信息
+      description: |
+        公开基础信息端点, 用于查看应用暴露的非敏感info信息.
+        未配置info属性时通常返回空JSON对象.
+        该接口不需要Authorization请求头.
+      responses:
+        "200":
+          description: 请求成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActuatorInfoResponse"
+              example: {}
   /assess/models:
     get:
       tags:
@@ -901,6 +945,19 @@ components:
         type: string
       example: "{{token}}"
   schemas:
+    ActuatorHealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          description: Actuator健康状态, 常见值为UP或DOWN.
+          example: UP
+      required:
+        - status
+    ActuatorInfoResponse:
+      type: object
+      description: Actuator info端点返回的基础信息. 未配置info属性时通常为空对象.
+      additionalProperties: true
     AuthTokenResponse:
       type: object
       properties:
